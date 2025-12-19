@@ -1,0 +1,49 @@
+COMMERCIAL LICENSE AGREEMENT
+
+This Commercial License Agreement ("Agreement") is entered into between
+the copyright holder of the dbc-rs software ("Licensor") and the
+entity or individual purchasing a commercial license ("Licensee").
+
+1. GRANT OF LICENSE
+
+   Subject to the terms and conditions of this Agreement, Licensor
+   grants Licensee a non-exclusive, non-transferable license to use,
+   modify, and distribute the dbc-rs software in proprietary and
+   commercial applications without the requirement to:
+   
+   (a) Disclose source code modifications
+   (b) Distribute derivative works under an open-source license
+   (c) Include copyright notices in binary distributions
+   (d) Provide source code to end users
+
+2. RESTRICTIONS
+
+   Licensee may NOT:
+   
+   (a) Redistribute the software under an open-source license
+   (b) Remove copyright notices from source code
+   (c) Use the software to create competing products without permission
+   (d) Transfer or sublicense the license without written consent
+
+3. TERM AND TERMINATION
+
+   This license is perpetual for the version purchased, unless terminated
+   for breach. Upon termination, Licensee must cease all use and destroy
+   all copies.
+
+4. FEES
+
+   Commercial licenses are available for purchase. Contact the Licensor
+   for pricing and terms.
+
+5. WARRANTY DISCLAIMER
+
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY DAMAGES ARISING FROM
+   USE OF THE SOFTWARE.
+
+For commercial licensing inquiries, please [create an **Issue** in GitHub](https://github.com/reneherrero/dbc-rs/issues).
+

@@ -1,0 +1,16 @@
+[package]
+name = "mdf4-rs"
+version = "0.1.0-alpha1"
+edition = "2024"
+description = "mdf4-rs is a Rust library for working with Measurement Data Format (ASAM MDF4) files."
+license = "MIT"
+repository = "https://github.com/reneherrero/mdf4-rs"
+readme = "README.md"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[[bench]]
+name = "index_benchmark"
+harness = false
