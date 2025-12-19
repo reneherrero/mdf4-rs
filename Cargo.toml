@@ -9,11 +9,11 @@ readme = "README.md"
 exclude = ["examples/", "tests/", "benches/"]
 
 [features]
-default = ["std", "embedded-can", "dbc"]
+default = ["std", "can", "dbc"]
 std = ["alloc", "serde", "serde_json"]
 alloc = []
 serde = ["dep:serde"]
-embedded-can = ["dep:embedded-can"]
+can = ["dep:embedded-can"]
 dbc = ["dep:dbc-rs", "alloc"]
 
 [dependencies]

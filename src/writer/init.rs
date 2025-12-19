@@ -235,4 +235,180 @@ impl<W: MdfWrite> MdfWriter<W> {
         }
         Ok(())
     }
+
+    /// Sets the unit string for an existing channel.
+    ///
+    /// This creates a text block containing the unit string and links it
+    /// to the channel's unit_addr field.
+    ///
+    /// # Arguments
+    /// * `cn_id` - The channel ID returned from `add_channel()`
+    /// * `unit` - The unit string (e.g., "rpm", "°C", "km/h")
+    ///
+    /// # Example
+    /// ```ignore
+    /// let ch = writer.add_channel(&cg, None, |ch| {
+    ///     ch.name = Some("Temperature".into());
+    ///     ch.data_type = DataType::FloatLE;
+    ///     ch.bit_count = 64;
+    /// })?;
+    /// writer.set_channel_unit(&ch, "°C")?;
+    /// ```
+    pub fn set_channel_unit(&mut self, cn_id: &str, unit: &str) -> Result<()> {
+        if unit.is_empty() {
+            return Ok(());
+        }
+
+        let cn_pos = self
+            .get_block_position(cn_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+
+        let tx_id = format!("tx_unit_{}", cn_id);
+        let tx_block = TextBlock::new(unit);
+        let tx_bytes = tx_block.to_bytes()?;
+        let tx_pos = self.write_block_with_id(&tx_bytes, &tx_id)?;
+
+        // unit_addr is at offset 72 in ChannelBlock (after header + 6 links)
+        const UNIT_ADDR_OFFSET: u64 = 72;
+        self.update_link(cn_pos + UNIT_ADDR_OFFSET, tx_pos)?;
+
+        Ok(())
+    }
+
+    /// Sets the comment/description for an existing channel.
+    ///
+    /// This creates a text block containing the comment and links it
+    /// to the channel's comment_addr field.
+    ///
+    /// # Arguments
+    /// * `cn_id` - The channel ID returned from `add_channel()`
+    /// * `comment` - The comment/description string
+    pub fn set_channel_comment(&mut self, cn_id: &str, comment: &str) -> Result<()> {
+        if comment.is_empty() {
+            return Ok(());
+        }
+
+        let cn_pos = self
+            .get_block_position(cn_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+
+        let tx_id = format!("tx_comment_{}", cn_id);
+        let tx_block = TextBlock::new(comment);
+        let tx_bytes = tx_block.to_bytes()?;
+        let tx_pos = self.write_block_with_id(&tx_bytes, &tx_id)?;
+
+        // comment_addr is at offset 80 in ChannelBlock
+        const COMMENT_ADDR_OFFSET: u64 = 80;
+        self.update_link(cn_pos + COMMENT_ADDR_OFFSET, tx_pos)?;
+
+        Ok(())
+    }
+
+    /// Sets the conversion block for an existing channel.
+    ///
+    /// This writes the conversion block and links it to the channel's
+    /// conversion_addr field. Use `ConversionBlock::linear()` or other
+    /// constructors to create the conversion.
+    ///
+    /// # Arguments
+    /// * `cn_id` - The channel ID returned from `add_channel()`
+    /// * `conversion` - The conversion block to attach
+    ///
+    /// # Example
+    /// ```ignore
+    /// use mdf4_rs::blocks::ConversionBlock;
+    ///
+    /// let ch = writer.add_channel(&cg, None, |ch| {
+    ///     ch.name = Some("Temperature".into());
+    ///     ch.data_type = DataType::SignedIntegerLE;
+    ///     ch.bit_count = 16;
+    /// })?;
+    ///
+    /// // Raw value to Celsius: physical = -40 + 0.1 * raw
+    /// let conv = ConversionBlock::linear(-40.0, 0.1);
+    /// writer.set_channel_conversion(&ch, &conv)?;
+    /// ```
+    pub fn set_channel_conversion(&mut self, cn_id: &str, conversion: &ConversionBlock) -> Result<()> {
+        // Skip identity conversions (they're redundant)
+        if conversion.is_identity() {
+            return Ok(());
+        }
+
+        let cn_pos = self
+            .get_block_position(cn_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+
+        let cc_count = self
+            .block_positions
+            .keys()
+            .filter(|k| k.starts_with("cc_"))
+            .count();
+        let cc_id = format!("cc_{}", cc_count);
+
+        let cc_bytes = conversion.to_bytes()?;
+        let cc_pos = self.write_block_with_id(&cc_bytes, &cc_id)?;
+
+        // conversion_addr is at offset 56 in ChannelBlock
+        const CONVERSION_ADDR_OFFSET: u64 = 56;
+        self.update_link(cn_pos + CONVERSION_ADDR_OFFSET, cc_pos)?;
+
+        Ok(())
+    }
+
+    /// Sets channel limits (min/max physical values).
+    ///
+    /// Updates the lower_limit and upper_limit fields in the channel block.
+    ///
+    /// # Arguments
+    /// * `cn_id` - The channel ID returned from `add_channel()`
+    /// * `min` - Minimum physical value
+    /// * `max` - Maximum physical value
+    pub fn set_channel_limits(&mut self, cn_id: &str, min: f64, max: f64) -> Result<()> {
+        let cn_pos = self
+            .get_block_position(cn_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+
+        // lower_limit is at offset 128, upper_limit at 136
+        const LOWER_LIMIT_OFFSET: u64 = 128;
+        const UPPER_LIMIT_OFFSET: u64 = 136;
+
+        self.update_link(cn_pos + LOWER_LIMIT_OFFSET, min.to_bits())?;
+        self.update_link(cn_pos + UPPER_LIMIT_OFFSET, max.to_bits())?;
+
+        // Update in-memory copy
+        if let Some((cg, idx)) = self.channel_map.get(cn_id).cloned()
+            && let Some(chs) = self.cg_channels.get_mut(&cg)
+            && let Some(ch) = chs.get_mut(idx)
+        {
+            ch.lower_limit = min;
+            ch.upper_limit = max;
+        }
+
+        Ok(())
+    }
+
+    /// Adds a linear conversion to a channel.
+    ///
+    /// Convenience method that combines `set_channel_conversion` with
+    /// `ConversionBlock::linear()`.
+    ///
+    /// # Arguments
+    /// * `cn_id` - The channel ID returned from `add_channel()`
+    /// * `offset` - The offset value (P1): physical = offset + factor * raw
+    /// * `factor` - The scaling factor (P2)
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Raw to RPM: physical = 0 + 0.25 * raw
+    /// writer.add_linear_conversion(&ch, 0.0, 0.25)?;
+    /// ```
+    pub fn add_linear_conversion(&mut self, cn_id: &str, offset: f64, factor: f64) -> Result<()> {
+        // Skip identity conversions
+        if offset == 0.0 && factor == 1.0 {
+            return Ok(());
+        }
+
+        let conversion = ConversionBlock::linear(offset, factor);
+        self.set_channel_conversion(cn_id, &conversion)
+    }
 }
