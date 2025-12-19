@@ -6,8 +6,10 @@
 //! # Example
 //!
 //! ```no_run
+//! # #[cfg(feature = "std")]
 //! use mdf4_rs::{MDF, Error, Result};
 //!
+//! # #[cfg(feature = "std")]
 //! fn process_file(path: &str) -> Result<()> {
 //!     match MDF::from_file(path) {
 //!         Ok(mdf) => {
@@ -27,7 +29,10 @@
 //! }
 //! ```
 
-use std::fmt;
+use core::fmt;
+
+#[cfg(feature = "alloc")]
+use alloc::string::String;
 
 /// Errors that can occur during MDF file operations.
 ///
@@ -70,7 +75,16 @@ pub enum Error {
     },
 
     /// An I/O error occurred while reading or writing the file.
+    ///
+    /// Only available with the `std` feature.
+    #[cfg(feature = "std")]
     IOError(std::io::Error),
+
+    /// A write operation failed (no_std version).
+    ///
+    /// Only available without the `std` feature.
+    #[cfg(not(feature = "std"))]
+    WriteError,
 
     /// The version string in the identification block could not be parsed.
     InvalidVersionString(String),
@@ -129,7 +143,10 @@ impl fmt::Display for Error {
                     "Invalid block identifier: Expected {expected:?}, got {actual:?}"
                 )
             }
+            #[cfg(feature = "std")]
             Error::IOError(e) => write!(f, "I/O error: {e}"),
+            #[cfg(not(feature = "std"))]
+            Error::WriteError => write!(f, "Write error"),
             Error::InvalidVersionString(s) => write!(f, "Invalid version string: {s}"),
             Error::BlockLinkError(s) => write!(f, "Block linking error: {s}"),
             Error::BlockSerializationError(s) => write!(f, "Block serialization error: {s}"),
@@ -149,6 +166,7 @@ impl fmt::Display for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -158,6 +176,7 @@ impl std::error::Error for Error {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::IOError(err)
@@ -166,5 +185,5 @@ impl From<std::io::Error> for Error {
 
 /// A specialized Result type for MDF operations.
 ///
-/// This is defined as `std::result::Result<T, Error>` for convenience.
+/// This is defined as `core::result::Result<T, Error>` for convenience.
 pub type Result<T> = core::result::Result<T, Error>;

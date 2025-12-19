@@ -1,7 +1,8 @@
 use super::linear::extract_numeric;
 use crate::Result;
 use crate::blocks::conversion::base::ConversionBlock;
-use crate::parsing::decoder::DecodedValue;
+use crate::types::DecodedValue;
+use alloc::vec::Vec;
 
 /// General table lookup: either interpolated or nearest neighbour.
 /// `cc_val` must be `[key0, val0, key1, val1, …]`.

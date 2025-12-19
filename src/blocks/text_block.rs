@@ -2,6 +2,10 @@ use crate::{
     Error, Result,
     blocks::common::{BlockHeader, BlockParse},
 };
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec;
+use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub struct TextBlock {

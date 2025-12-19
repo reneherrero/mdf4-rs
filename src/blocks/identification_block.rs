@@ -1,6 +1,9 @@
 // identification_block.rs
 use crate::{Error, Result};
-use std::str::{self, from_utf8};
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+use core::str::{self, from_utf8};
 
 #[derive(Debug)]
 pub struct IdentificationBlock {
@@ -54,7 +57,7 @@ impl IdentificationBlock {
     fn copy_string_with_padding(source: &str, target: &mut [u8], use_space_padding: bool) {
         // Copy string bytes up to target length
         let src_bytes = source.as_bytes();
-        let copy_len = std::cmp::min(src_bytes.len(), target.len());
+        let copy_len = core::cmp::min(src_bytes.len(), target.len());
         target[..copy_len].copy_from_slice(&src_bytes[..copy_len]);
 
         // Apply padding if needed

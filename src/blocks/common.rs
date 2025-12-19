@@ -3,8 +3,12 @@ use crate::{
     Error, Result,
     blocks::{metadata_block::MetadataBlock, text_block::TextBlock},
 };
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockHeader {
     pub id: String,     // 4-byte string
     pub reserved0: u32, // 4 bytes
@@ -47,7 +51,7 @@ impl BlockHeader {
         let mut id_field = [0u8; 4]; // Initialize with zeros for padding
 
         // Copy either all bytes or first 4 bytes of ID
-        let id_len = std::cmp::min(id_bytes.len(), 4);
+        let id_len = core::cmp::min(id_bytes.len(), 4);
         id_field[..id_len].copy_from_slice(&id_bytes[..id_len]);
         buffer.extend_from_slice(&id_field);
 
@@ -115,7 +119,8 @@ pub trait BlockParse<'a>: Sized {
     fn from_bytes(bytes: &'a [u8]) -> Result<Self>;
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DataType {
     UnsignedIntegerLE,
     UnsignedIntegerBE,
