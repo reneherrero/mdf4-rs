@@ -3,6 +3,9 @@ use crate::{
     Error, Result,
     blocks::common::{BlockHeader, BlockParse},
 };
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Debug)]
 pub struct HeaderBlock {

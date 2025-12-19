@@ -1,5 +1,9 @@
 // Functions for creating and linking MDF structure blocks
-use super::MdfWriter;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
+use super::{MdfWrite, MdfWriter};
 use crate::{
     Result,
     blocks::{
@@ -8,7 +12,7 @@ use crate::{
     },
 };
 
-impl MdfWriter {
+impl<W: MdfWrite> MdfWriter<W> {
     /// Initializes a new MDF 4.1 file with identification and header blocks.
     pub fn init_mdf_file(&mut self) -> Result<(u64, u64)> {
         let id_block = IdentificationBlock::default();

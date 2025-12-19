@@ -3,7 +3,7 @@
 //! Run with: cargo bench --bench index_benchmark
 
 use mdf4_rs::{
-    BufferedRangeReader, DataType, DecodedValue, FileRangeReader, MdfIndex, MdfWriter, MDF,
+    BufferedRangeReader, DataType, DecodedValue, FileRangeReader, MDF, MdfIndex, MdfWriter,
 };
 use std::time::{Duration, Instant};
 
@@ -90,10 +90,8 @@ fn main() -> mdf4_rs::Result<()> {
     for (num_channels, num_records, desc) in configs {
         println!("--- {} ---", desc);
 
-        let path = std::env::temp_dir().join(format!(
-            "bench_{}ch_{}rec.mf4",
-            num_channels, num_records
-        ));
+        let path =
+            std::env::temp_dir().join(format!("bench_{}ch_{}rec.mf4", num_channels, num_records));
         let path_str = path.to_str().unwrap();
 
         // Create test file
@@ -115,15 +113,23 @@ fn main() -> mdf4_rs::Result<()> {
         });
 
         // Benchmark: Index creation - new streaming method
-        let new_index = bench("Index (from_file_streaming - minimal memory)", iterations, || {
-            let _ = MdfIndex::from_file_streaming(path_str).unwrap();
-        });
+        let new_index = bench(
+            "Index (from_file_streaming - minimal memory)",
+            iterations,
+            || {
+                let _ = MdfIndex::from_file_streaming(path_str).unwrap();
+            },
+        );
 
         // Benchmark: Read single channel - old method
-        let old_read = bench("Read channel (MDF::from_file + values())", iterations, || {
-            let mdf = MDF::from_file(path_str).unwrap();
-            let _values = mdf.channel_groups()[0].channels()[1].values().unwrap();
-        });
+        let old_read = bench(
+            "Read channel (MDF::from_file + values())",
+            iterations,
+            || {
+                let mdf = MDF::from_file(path_str).unwrap();
+                let _values = mdf.channel_groups()[0].channels()[1].values().unwrap();
+            },
+        );
 
         // Benchmark: Read single channel - new method with index
         let index = MdfIndex::from_file_streaming(path_str)?;
@@ -182,7 +188,11 @@ fn main() -> mdf4_rs::Result<()> {
         println!("  {:50} {:>10.2} ms", old_read.name, old_read.avg_ms());
         println!("  {:50} {:>10.2} ms", new_read.name, new_read.avg_ms());
         println!("  {:50} {:>10.2} ms", unbuf_read.name, unbuf_read.avg_ms());
-        println!("  {:50} {:>10.2} ms", cached_read.name, cached_read.avg_ms());
+        println!(
+            "  {:50} {:>10.2} ms",
+            cached_read.name,
+            cached_read.avg_ms()
+        );
 
         let speedup_read = old_read.avg_ms() / new_read.avg_ms();
         println!(

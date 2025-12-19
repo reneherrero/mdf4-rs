@@ -37,12 +37,12 @@ use crate::{
     },
     parsing::decoder::{DecodedValue, decode_channel_value_with_validity},
 };
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 
 /// Represents the location and metadata of data blocks in the file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DataBlockInfo {
     /// File offset where the data block starts
     pub file_offset: u64,
@@ -53,7 +53,8 @@ pub struct DataBlockInfo {
 }
 
 /// Channel metadata needed for decoding values
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IndexedChannel {
     /// Channel name
     pub name: Option<String>,
@@ -80,7 +81,8 @@ pub struct IndexedChannel {
 }
 
 /// Channel group metadata and layout information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IndexedChannelGroup {
     /// Group name
     pub name: Option<String>,
@@ -101,7 +103,8 @@ pub struct IndexedChannelGroup {
 }
 
 /// Complete MDF file index
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MdfIndex {
     /// File size for validation
     pub file_size: u64,
@@ -559,7 +562,7 @@ impl MdfIndex {
             | ConversionType::TextToValue
             | ConversionType::TextToText
             | ConversionType::BitfieldText => {
-                let mut resolved = HashMap::new();
+                let mut resolved = BTreeMap::new();
                 for (idx, &ref_addr) in conv.cc_ref.iter().enumerate() {
                     if ref_addr != 0 {
                         // Check if this is a text block or nested conversion
@@ -719,7 +722,10 @@ impl MdfIndex {
         Ok(data_blocks)
     }
 
-    /// Save the index to a JSON file
+    /// Save the index to a JSON file.
+    ///
+    /// Requires the `serde` and `serde_json` features.
+    #[cfg(feature = "serde_json")]
     pub fn save_to_file(&self, index_path: &str) -> Result<()> {
         let json = serde_json::to_string_pretty(self).map_err(|e| {
             Error::BlockSerializationError(format!("JSON serialization failed: {}", e))
@@ -730,7 +736,10 @@ impl MdfIndex {
         Ok(())
     }
 
-    /// Load an index from a JSON file
+    /// Load an index from a JSON file.
+    ///
+    /// Requires the `serde` and `serde_json` features.
+    #[cfg(feature = "serde_json")]
     pub fn load_from_file(index_path: &str) -> Result<Self> {
         let json = std::fs::read_to_string(index_path).map_err(Error::IOError)?;
 

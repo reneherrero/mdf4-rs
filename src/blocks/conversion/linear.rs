@@ -1,6 +1,8 @@
 use crate::Result;
 use crate::blocks::conversion::base::ConversionBlock;
-use crate::parsing::decoder::DecodedValue;
+use crate::types::DecodedValue;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Attempts to extract a numeric value from a [`DecodedValue`].
 /// Returns `Some(f64)` if the input is numeric, or `None` otherwise.
@@ -229,9 +231,65 @@ fn parse_power(
     if *pos < tokens.len() && tokens[*pos] == Token::Caret {
         *pos += 1;
         let exp = parse_power(tokens, pos, x)?; // Right associative
-        Ok(base.powf(exp))
+        Ok(pow_compat(base, exp))
     } else {
         Ok(base)
+    }
+}
+
+/// Round to nearest integer (works without std).
+#[inline]
+fn round_compat(x: f64) -> f64 {
+    if x >= 0.0 {
+        (x + 0.5) as i64 as f64
+    } else {
+        (x - 0.5) as i64 as f64
+    }
+}
+
+/// Integer power function (works without std).
+/// Uses exponentiation by squaring for efficiency.
+#[inline]
+fn powi_compat(base: f64, exp: i32) -> f64 {
+    if exp == 0 {
+        return 1.0;
+    }
+    let mut result = 1.0;
+    let mut b = base;
+    let mut n = exp.unsigned_abs();
+    while n > 0 {
+        if n & 1 != 0 {
+            result *= b;
+        }
+        b *= b;
+        n >>= 1;
+    }
+    if exp < 0 { 1.0 / result } else { result }
+}
+
+/// Power function that works in both std and no_std environments.
+/// Uses integer exponentiation for integer exponents, and `powf` for
+/// non-integer exponents (requires std).
+#[inline]
+fn pow_compat(base: f64, exp: f64) -> f64 {
+    // Check if exponent is close to an integer
+    let exp_rounded = round_compat(exp);
+    if (exp - exp_rounded).abs() < 1e-10 {
+        // Use integer power for integer exponents
+        let exp_int = exp_rounded as i32;
+        powi_compat(base, exp_int)
+    } else {
+        // Non-integer exponent requires powf
+        #[cfg(feature = "std")]
+        {
+            base.powf(exp)
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            // For no_std without libm, we return NaN for non-integer exponents
+            // This is a rare edge case in MDF4 algebraic formulas
+            core::f64::NAN
+        }
     }
 }
 

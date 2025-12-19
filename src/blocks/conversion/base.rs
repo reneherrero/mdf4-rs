@@ -2,7 +2,18 @@ use super::types::ConversionType;
 use crate::blocks::common::{BlockHeader, BlockParse};
 use crate::{Error, Result};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+
+#[cfg(feature = "std")]
+use alloc::collections::BTreeMap;
+#[cfg(feature = "std")]
+use alloc::collections::BTreeSet;
+
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ConversionBlock {
     pub header: BlockHeader,
 
@@ -28,11 +39,17 @@ pub struct ConversionBlock {
     // Resolved data for self-contained conversions (populated during index creation)
     /// Pre-resolved text strings for text-based conversions (ValueToText, RangeToText, etc.)
     /// Maps cc_ref indices to their resolved text content
-    pub resolved_texts: Option<std::collections::HashMap<usize, String>>,
+    #[cfg(feature = "std")]
+    pub resolved_texts: Option<BTreeMap<usize, String>>,
+    #[cfg(not(feature = "std"))]
+    pub resolved_texts: Option<()>,
 
     /// Pre-resolved nested conversion blocks for chained conversions
     /// Maps cc_ref indices to their resolved ConversionBlock content
-    pub resolved_conversions: Option<std::collections::HashMap<usize, Box<ConversionBlock>>>,
+    #[cfg(feature = "std")]
+    pub resolved_conversions: Option<BTreeMap<usize, Box<ConversionBlock>>>,
+    #[cfg(not(feature = "std"))]
+    pub resolved_conversions: Option<()>,
 
     /// Default conversion for fallback cases (similar to asammdf's "default_addr")
     /// This is typically the last reference in cc_ref for some conversion types
@@ -155,20 +172,20 @@ impl ConversionBlock {
     ///
     /// # Returns
     /// `Ok(())` on success or an [`Error`] if resolution fails
+    #[cfg(feature = "std")]
     pub fn resolve_all_dependencies(&mut self, file_data: &[u8]) -> Result<()> {
         self.resolve_all_dependencies_with_address(file_data, 0)
     }
 
     /// Resolve all dependencies with a known current block address (used internally)
+    #[cfg(feature = "std")]
     pub fn resolve_all_dependencies_with_address(
         &mut self,
         file_data: &[u8],
         current_address: u64,
     ) -> Result<()> {
-        use std::collections::HashSet;
-
         // Start resolution with empty visited set to detect cycles
-        let mut visited = HashSet::new();
+        let mut visited = BTreeSet::new();
         self.resolve_all_dependencies_recursive(file_data, 0, &mut visited, current_address)
     }
 
@@ -182,15 +199,15 @@ impl ConversionBlock {
     ///
     /// # Returns
     /// `Ok(())` on success or an [`Error`] if resolution fails
+    #[cfg(feature = "std")]
     fn resolve_all_dependencies_recursive(
         &mut self,
         file_data: &[u8],
         depth: usize,
-        visited: &mut std::collections::HashSet<u64>,
+        visited: &mut BTreeSet<u64>,
         current_address: u64,
     ) -> Result<()> {
         use crate::blocks::common::{BlockHeader, read_string_block};
-        use std::collections::HashMap;
 
         const MAX_DEPTH: usize = 20; // Reasonable depth limit
 
@@ -208,8 +225,8 @@ impl ConversionBlock {
         self.resolve_formula(file_data)?;
 
         // Initialize resolved data containers
-        let mut resolved_texts = HashMap::new();
-        let mut resolved_conversions = HashMap::new();
+        let mut resolved_texts = BTreeMap::new();
+        let mut resolved_conversions = BTreeMap::new();
         let mut default_conversion = None;
 
         // Re-enable default conversion logic for specific types that need it
@@ -297,12 +314,14 @@ impl ConversionBlock {
 
     /// Get a resolved text string for a given cc_ref index.
     /// Returns the text if it was resolved during dependency resolution.
+    #[cfg(feature = "std")]
     pub fn get_resolved_text(&self, ref_index: usize) -> Option<&String> {
         self.resolved_texts.as_ref()?.get(&ref_index)
     }
 
     /// Get a resolved nested conversion for a given cc_ref index.
     /// Returns the conversion block if it was resolved during dependency resolution.
+    #[cfg(feature = "std")]
     pub fn get_resolved_conversion(&self, ref_index: usize) -> Option<&ConversionBlock> {
         self.resolved_conversions
             .as_ref()?

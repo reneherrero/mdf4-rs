@@ -1,13 +1,16 @@
 // Low level file and block handling utilities for MdfWriter
-use super::MdfWriter;
-use crate::{Error, Result};
-use std::{
-    collections::HashMap,
-    fs::File,
-    io::{BufWriter, Seek, SeekFrom, Write},
-};
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
 
-impl MdfWriter {
+use super::{MdfWrite, MdfWriter};
+use crate::{Error, Result};
+
+#[cfg(feature = "std")]
+use super::FileWriter;
+
+#[cfg(feature = "std")]
+impl MdfWriter<FileWriter> {
     /// Creates a new MdfWriter for the given file path using a 1 MB internal
     /// buffer. Use [`Self::new_with_capacity`] to customize the buffer size.
     pub fn new(path: &str) -> Result<Self> {
@@ -29,33 +32,23 @@ impl MdfWriter {
     /// # Ok::<(), mdf4_rs::Error>(())
     /// ```
     pub fn new_with_capacity(path: &str, capacity: usize) -> Result<Self> {
-        let file = File::create(path)?;
-        let file = BufWriter::with_capacity(capacity, file);
-        Ok(MdfWriter {
-            file: Box::new(file),
-            offset: 0,
-            block_positions: HashMap::new(),
-            open_dts: HashMap::new(),
-            dt_counter: 0,
-            last_dg: None,
-            cg_to_dg: HashMap::new(),
-            cg_offsets: HashMap::new(),
-            cg_channels: HashMap::new(),
-            channel_map: HashMap::new(),
-        })
+        let file_writer = FileWriter::with_capacity(path, capacity)?;
+        Ok(Self::from_writer(file_writer))
     }
+}
 
+impl<W: MdfWrite> MdfWriter<W> {
     /// Writes a block to the file, aligning to 8 bytes and zero-padding as needed.
     /// Returns the starting offset of the block in the file.
     pub fn write_block(&mut self, block_bytes: &[u8]) -> Result<u64> {
         let align = (8 - (self.offset % 8)) % 8;
         if align != 0 {
             let padding = vec![0u8; align as usize];
-            self.file.write_all(&padding)?;
+            self.writer.write_all(&padding)?;
             self.offset += align;
         }
 
-        self.file.write_all(block_bytes)?;
+        self.writer.write_all(block_bytes)?;
         let block_start = self.offset;
         self.offset += block_bytes.len() as u64;
         Ok(block_start)
@@ -77,9 +70,9 @@ impl MdfWriter {
     /// Updates a link (u64 address) at a specific offset in the file.
     pub fn update_link(&mut self, offset: u64, address: u64) -> Result<()> {
         let current_pos = self.offset;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&address.to_le_bytes())?;
-        self.file.seek(SeekFrom::Start(current_pos))?;
+        self.writer.seek(offset)?;
+        self.writer.write_all(&address.to_le_bytes())?;
+        self.writer.seek(current_pos)?;
         Ok(())
     }
 
@@ -102,25 +95,25 @@ impl MdfWriter {
 
     fn update_u32(&mut self, offset: u64, value: u32) -> Result<()> {
         let current_pos = self.offset;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&value.to_le_bytes())?;
-        self.file.seek(SeekFrom::Start(current_pos))?;
+        self.writer.seek(offset)?;
+        self.writer.write_all(&value.to_le_bytes())?;
+        self.writer.seek(current_pos)?;
         Ok(())
     }
 
     fn update_u64(&mut self, offset: u64, value: u64) -> Result<()> {
         let current_pos = self.offset;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&value.to_le_bytes())?;
-        self.file.seek(SeekFrom::Start(current_pos))?;
+        self.writer.seek(offset)?;
+        self.writer.write_all(&value.to_le_bytes())?;
+        self.writer.seek(current_pos)?;
         Ok(())
     }
 
     fn update_u8(&mut self, offset: u64, value: u8) -> Result<()> {
         let current_pos = self.offset;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&[value])?;
-        self.file.seek(SeekFrom::Start(current_pos))?;
+        self.writer.seek(offset)?;
+        self.writer.write_all(&[value])?;
+        self.writer.seek(current_pos)?;
         Ok(())
     }
 
@@ -166,8 +159,8 @@ impl MdfWriter {
     }
 
     /// Finalizes the file (flushes all data to disk).
-    pub fn finalize(mut self) -> Result<()> {
-        self.file.flush()?;
+    pub fn finalize(&mut self) -> Result<()> {
+        self.writer.flush()?;
         Ok(())
     }
 }

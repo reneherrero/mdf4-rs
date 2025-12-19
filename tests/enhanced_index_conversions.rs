@@ -203,7 +203,7 @@ fn test_resolved_data_accessor_methods() -> Result<()> {
         default_conversion: None,
     };
 
-    let mut resolved_texts = std::collections::HashMap::new();
+    let mut resolved_texts = std::collections::BTreeMap::new();
     resolved_texts.insert(0, "Test Text".to_string());
     conversion.resolved_texts = Some(resolved_texts);
 
@@ -250,7 +250,7 @@ fn test_index_serialization_with_resolved_data() -> Result<()> {
         default_conversion: None,
     };
 
-    let mut resolved_texts = std::collections::HashMap::new();
+    let mut resolved_texts = std::collections::BTreeMap::new();
     resolved_texts.insert(0, "Resolved Text".to_string());
     conversion.resolved_texts = Some(resolved_texts);
 

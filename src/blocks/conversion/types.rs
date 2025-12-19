@@ -1,5 +1,6 @@
 /// Represents the conversion type (cc_type) from a conversion block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ConversionType {
     /// 0: 1:1 conversion (no change)
     Identity,

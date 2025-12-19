@@ -2,7 +2,7 @@ use super::{bitfield, linear, table_lookup, text};
 use crate::Result;
 use crate::blocks::conversion::base::ConversionBlock;
 use crate::blocks::conversion::types::ConversionType;
-use crate::parsing::decoder::DecodedValue;
+use crate::types::DecodedValue;
 
 impl ConversionBlock {
     /// Applies the conversion formula to a decoded channel value.

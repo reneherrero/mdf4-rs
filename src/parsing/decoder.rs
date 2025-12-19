@@ -1,21 +1,11 @@
 use crate::blocks::{ChannelBlock, DataType};
 
+// Re-export DecodedValue from types module for backward compatibility
+pub use crate::types::DecodedValue;
+
 // Flag bit positions for cn_flags
 const CN_FLAG_ALL_INVALID: u32 = 0x01; // Bit 0: All values are invalid
 const CN_FLAG_INVAL_BIT_VALID: u32 = 0x02; // Bit 1: Invalidation bit is valid
-
-/// An enum representing the decoded value of a channel sample.
-#[derive(Debug, Clone, PartialEq)]
-pub enum DecodedValue {
-    UnsignedInteger(u64),
-    SignedInteger(i64),
-    Float(f64),
-    String(String),
-    ByteArray(Vec<u8>),
-    MimeSample(Vec<u8>),
-    MimeStream(Vec<u8>),
-    Unknown,
-}
 
 /// Result of decoding a channel value, including validity status.
 #[derive(Debug, Clone, PartialEq)]

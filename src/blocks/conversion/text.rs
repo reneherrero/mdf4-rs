@@ -2,7 +2,7 @@ use super::linear::extract_numeric;
 use crate::Result;
 use crate::blocks::common::{BlockHeader, BlockParse, read_string_block};
 use crate::blocks::conversion::base::ConversionBlock;
-use crate::parsing::decoder::DecodedValue;
+use crate::types::DecodedValue;
 
 /// Given `cc_val = [min0, max0, min1, max1, …]`, return the first index where
 /// `raw` falls into `[min_i, max_i]`.
@@ -42,13 +42,16 @@ pub fn apply_value_to_text(
         .position(|&k| k == raw)
         .unwrap_or(block.cc_val.len());
 
-    // First try to use resolved data if available
-    if let Some(resolved_text) = block.get_resolved_text(idx) {
-        return Ok(DecodedValue::String(resolved_text.clone()));
-    }
+    // First try to use resolved data if available (std only)
+    #[cfg(feature = "std")]
+    {
+        if let Some(resolved_text) = block.get_resolved_text(idx) {
+            return Ok(DecodedValue::String(resolved_text.clone()));
+        }
 
-    if let Some(resolved_conversion) = block.get_resolved_conversion(idx) {
-        return resolved_conversion.apply_decoded(value, &[]); // Use empty file_data for resolved conversions
+        if let Some(resolved_conversion) = block.get_resolved_conversion(idx) {
+            return resolved_conversion.apply_decoded(value, &[]);
+        }
     }
 
     // If no match found and we have a default conversion, use it
@@ -118,13 +121,16 @@ pub fn apply_range_to_text(
     let idx = find_range_to_text_index(&block.cc_val, raw, inclusive_upper);
     let n_ranges = block.cc_val.len() / 2;
 
-    // First try to use resolved data if available
-    if let Some(resolved_text) = block.get_resolved_text(idx) {
-        return Ok(DecodedValue::String(resolved_text.clone()));
-    }
+    // First try to use resolved data if available (std only)
+    #[cfg(feature = "std")]
+    {
+        if let Some(resolved_text) = block.get_resolved_text(idx) {
+            return Ok(DecodedValue::String(resolved_text.clone()));
+        }
 
-    if let Some(resolved_conversion) = block.get_resolved_conversion(idx) {
-        return resolved_conversion.apply_decoded(value, &[]); // Use empty file_data for resolved conversions
+        if let Some(resolved_conversion) = block.get_resolved_conversion(idx) {
+            return resolved_conversion.apply_decoded(value, &[]);
+        }
     }
 
     // If no range matched (idx == n_ranges) and we have a default conversion, use it
@@ -192,7 +198,8 @@ pub fn apply_text_to_value(
     };
     let n = block.cc_ref.len();
 
-    // First try to use resolved data if available
+    // First try to use resolved data if available (std only)
+    #[cfg(feature = "std")]
     if let Some(resolved_texts) = &block.resolved_texts {
         for (i, resolved_text) in resolved_texts.iter() {
             if *i < n && input == *resolved_text {
@@ -245,7 +252,8 @@ pub fn apply_text_to_text(
     };
     let pairs = block.cc_ref.len().saturating_sub(1) / 2;
 
-    // First try to use resolved data if available
+    // First try to use resolved data if available (std only)
+    #[cfg(feature = "std")]
     if let Some(resolved_texts) = &block.resolved_texts {
         for i in 0..pairs {
             let key_idx = 2 * i;

@@ -1,13 +1,17 @@
 // Handling of DT blocks and record writing
-use super::{MdfWriter, OpenDataBlock};
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec;
+use alloc::vec::Vec;
+
+use super::{MdfWrite, MdfWriter, OpenDataBlock};
 use crate::{
     Error, Result,
     blocks::{
         ChannelBlock, DataListBlock, {BlockHeader, DataType},
     },
-    parsing::decoder::DecodedValue,
+    types::DecodedValue,
 };
-use std::io::Write;
 
 pub(super) enum ChannelEncoder {
     UInt { offset: usize, bytes: usize },
@@ -62,7 +66,7 @@ fn encode_values(encoders: &[ChannelEncoder], buf: &mut [u8], values: &[DecodedV
     }
 }
 
-impl MdfWriter {
+impl<W: MdfWrite> MdfWriter<W> {
     /// Start writing a DTBLOCK for the given data group.
     pub fn start_data_block(
         &mut self,
@@ -231,7 +235,9 @@ impl MdfWriter {
         dt.record_buf.copy_from_slice(&dt.record_template);
         encode_values(&dt.encoders, &mut dt.record_buf, values);
 
-        self.file.write_all(&dt.record_buf)?;
+        let buf = dt.record_buf.clone();
+        self.writer.write_all(&buf)?;
+        let dt = self.open_dts.get_mut(cg_id).unwrap();
         dt.record_count += 1;
         self.offset += dt.record_buf.len() as u64;
         Ok(())
@@ -260,7 +266,9 @@ impl MdfWriter {
         for (enc, &v) in dt.encoders.iter().zip(values.iter()) {
             enc.encode_u64(&mut dt.record_buf, v);
         }
-        self.file.write_all(&dt.record_buf)?;
+        let buf = dt.record_buf.clone();
+        self.writer.write_all(&buf)?;
+        let dt = self.open_dts.get_mut(cg_id).unwrap();
         dt.record_count += 1;
         self.offset += dt.record_buf.len() as u64;
         Ok(())
@@ -297,7 +305,7 @@ impl MdfWriter {
             };
 
             if potential_new_block {
-                self.file.write_all(&buffer)?;
+                self.writer.write_all(&buffer)?;
                 self.offset += buffer.len() as u64;
                 buffer.clear();
 
@@ -339,7 +347,7 @@ impl MdfWriter {
         }
 
         if !buffer.is_empty() {
-            self.file.write_all(&buffer)?;
+            self.writer.write_all(&buffer)?;
             self.offset += buffer.len() as u64;
         }
         Ok(())
@@ -383,7 +391,7 @@ impl MdfWriter {
             };
 
             if potential_new_block {
-                self.file.write_all(&buffer)?;
+                self.writer.write_all(&buffer)?;
                 self.offset += buffer.len() as u64;
                 buffer.clear();
 
@@ -427,7 +435,7 @@ impl MdfWriter {
         }
 
         if !buffer.is_empty() {
-            self.file.write_all(&buffer)?;
+            self.writer.write_all(&buffer)?;
             self.offset += buffer.len() as u64;
         }
         Ok(())

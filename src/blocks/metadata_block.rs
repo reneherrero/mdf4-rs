@@ -2,6 +2,7 @@ use crate::{
     Error, Result,
     blocks::common::{BlockHeader, BlockParse},
 };
+use alloc::string::{String, ToString};
 
 #[derive(Debug)]
 pub struct MetadataBlock {

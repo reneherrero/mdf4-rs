@@ -29,74 +29,97 @@
 //! 7. Finish the data block with [`finish_data_block()`](MdfWriter::finish_data_block)
 //! 8. Finalize the file with [`finalize()`](MdfWriter::finalize)
 //!
-//! # Example
+//! # Example (std feature)
 //!
-//! ```no_run
+#![cfg_attr(feature = "std", doc = "```no_run")]
+#![cfg_attr(
+    feature = "std",
+    doc = "use mdf4_rs::{MdfWriter, DataType, DecodedValue, Result};"
+)]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "fn write_sensor_data() -> Result<()> {")]
+#![cfg_attr(
+    feature = "std",
+    doc = "    let mut writer = MdfWriter::new(\"sensor_data.mf4\")?;"
+)]
+#![cfg_attr(feature = "std", doc = "    writer.init_mdf_file()?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(
+    feature = "std",
+    doc = "    // Create a channel group for sensor readings"
+)]
+#![cfg_attr(
+    feature = "std",
+    doc = "    let sensors = writer.add_channel_group(None, |cg| {"
+)]
+#![cfg_attr(feature = "std", doc = "        // Configure channel group if needed")]
+#![cfg_attr(feature = "std", doc = "    })?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "    // Add a time channel (master channel)")]
+#![cfg_attr(
+    feature = "std",
+    doc = "    let time_ch = writer.add_channel(&sensors, None, |ch| {"
+)]
+#![cfg_attr(feature = "std", doc = "        ch.data_type = DataType::FloatLE;")]
+#![cfg_attr(feature = "std", doc = "        ch.name = Some(\"Time\".into());")]
+#![cfg_attr(feature = "std", doc = "        ch.bit_count = 64;")]
+#![cfg_attr(feature = "std", doc = "    })?;")]
+#![cfg_attr(feature = "std", doc = "    writer.set_time_channel(&time_ch)?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(
+    feature = "std",
+    doc = "    // Add a temperature channel linked after time"
+)]
+#![cfg_attr(
+    feature = "std",
+    doc = "    let temp_ch = writer.add_channel(&sensors, Some(&time_ch), |ch| {"
+)]
+#![cfg_attr(feature = "std", doc = "        ch.data_type = DataType::FloatLE;")]
+#![cfg_attr(
+    feature = "std",
+    doc = "        ch.name = Some(\"Temperature\".into());"
+)]
+#![cfg_attr(feature = "std", doc = "        ch.bit_count = 64;")]
+#![cfg_attr(feature = "std", doc = "    })?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "    // Write measurement data")]
+#![cfg_attr(
+    feature = "std",
+    doc = "    writer.start_data_block_for_cg(&sensors, 0)?;"
+)]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "    writer.write_record(&sensors, &[")]
+#![cfg_attr(feature = "std", doc = "        DecodedValue::Float(0.0),    // Time")]
+#![cfg_attr(
+    feature = "std",
+    doc = "        DecodedValue::Float(25.5),   // Temperature"
+)]
+#![cfg_attr(feature = "std", doc = "    ])?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "    writer.finish_data_block(&sensors)?;")]
+#![cfg_attr(feature = "std", doc = "    writer.finalize()?;")]
+#![cfg_attr(feature = "std", doc = "")]
+#![cfg_attr(feature = "std", doc = "    Ok(())")]
+#![cfg_attr(feature = "std", doc = "}")]
+#![cfg_attr(feature = "std", doc = "```")]
+//!
+//! # no_std Usage
+//!
+//! With just the `alloc` feature, you can write MDF data to memory:
+//!
+//! ```ignore
 //! use mdf4_rs::{MdfWriter, DataType, DecodedValue, Result};
+//! use mdf4_rs::writer::VecWriter;
 //!
-//! fn write_sensor_data() -> Result<()> {
-//!     let mut writer = MdfWriter::new("sensor_data.mf4")?;
-//!     writer.init_mdf_file()?;
-//!
-//!     // Create a channel group for sensor readings
-//!     let sensors = writer.add_channel_group(None, |cg| {
-//!         // Configure channel group if needed
-//!     })?;
-//!
-//!     // Add a time channel (master channel)
-//!     let time_ch = writer.add_channel(&sensors, None, |ch| {
-//!         ch.data_type = DataType::FloatLE;
-//!         ch.name = Some("Time".into());
-//!         ch.bit_count = 64;
-//!     })?;
-//!     writer.set_time_channel(&time_ch)?;
-//!
-//!     // Add a temperature channel linked after time
-//!     let temp_ch = writer.add_channel(&sensors, Some(&time_ch), |ch| {
-//!         ch.data_type = DataType::FloatLE;
-//!         ch.name = Some("Temperature".into());
-//!         ch.bit_count = 64;
-//!     })?;
-//!
-//!     // Add a pressure channel linked after temperature
-//!     writer.add_channel(&sensors, Some(&temp_ch), |ch| {
-//!         ch.data_type = DataType::FloatLE;
-//!         ch.name = Some("Pressure".into());
-//!         ch.bit_count = 64;
-//!     })?;
-//!
-//!     // Write measurement data
-//!     writer.start_data_block_for_cg(&sensors, 0)?;
-//!
-//!     // Each record contains values for all channels in order
-//!     writer.write_record(&sensors, &[
-//!         DecodedValue::Float(0.0),    // Time
-//!         DecodedValue::Float(25.5),   // Temperature
-//!         DecodedValue::Float(101.3),  // Pressure
-//!     ])?;
-//!
-//!     writer.write_record(&sensors, &[
-//!         DecodedValue::Float(0.1),
-//!         DecodedValue::Float(25.7),
-//!         DecodedValue::Float(101.2),
-//!     ])?;
-//!
-//!     writer.finish_data_block(&sensors)?;
-//!     writer.finalize()?;
-//!
-//!     Ok(())
+//! fn write_to_memory() -> Result<Vec<u8>> {
+//!     let writer = VecWriter::new();
+//!     let mut mdf = MdfWriter::from_writer(writer);
+//!     mdf.init_mdf_file()?;
+//!     // ... add channels and data ...
+//!     mdf.finalize()?;
+//!     Ok(mdf.into_inner().into_inner())
 //! }
 //! ```
-//!
-//! # Channel Linking
-//!
-//! Channels within a group form a linked list. When adding channels:
-//!
-//! - Pass `None` as `prev_cn_id` for the first channel (links from channel group)
-//! - Pass `Some(&previous_id)` to chain subsequent channels
-//!
-//! **Important**: All channels in a group must be properly chained. Using `None`
-//! for multiple channels will overwrite the channel group's first channel link.
 //!
 //! # Supported Data Types
 //!
@@ -107,20 +130,22 @@
 //! - Floating point (32, 64 bit, little/big endian)
 //! - Strings (UTF-8, Latin-1)
 
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use crate::blocks::ChannelBlock;
-use std::{
-    collections::HashMap,
-    io::{Seek, Write},
-};
 
 mod data;
 mod init;
 mod io;
+mod traits;
 
 use data::ChannelEncoder;
+pub use traits::{MdfWrite, VecWriter};
 
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek> WriteSeek for T {}
+#[cfg(feature = "std")]
+pub use traits::FileWriter;
 
 /// Helper structure tracking an open data block during writing.
 struct OpenDataBlock {
@@ -155,17 +180,68 @@ struct OpenDataBlock {
 ///
 /// # Performance
 ///
-/// The writer uses internal buffering (1 MB by default). For different buffer
-/// sizes, use [`new_with_capacity()`](Self::new_with_capacity).
-pub struct MdfWriter {
-    file: Box<dyn WriteSeek>,
+/// When using file-based writing (`std` feature), the writer uses internal
+/// buffering (1 MB by default). For different buffer sizes, use
+/// [`new_with_capacity()`](Self::new_with_capacity).
+pub struct MdfWriter<W: MdfWrite = VecWriter> {
+    writer: W,
     offset: u64,
-    block_positions: HashMap<String, u64>,
-    open_dts: HashMap<String, OpenDataBlock>,
+    block_positions: BTreeMap<String, u64>,
+    open_dts: BTreeMap<String, OpenDataBlock>,
     dt_counter: usize,
     last_dg: Option<String>,
-    cg_to_dg: HashMap<String, String>,
-    cg_offsets: HashMap<String, usize>,
-    cg_channels: HashMap<String, Vec<ChannelBlock>>,
-    channel_map: HashMap<String, (String, usize)>,
+    cg_to_dg: BTreeMap<String, String>,
+    cg_offsets: BTreeMap<String, usize>,
+    cg_channels: BTreeMap<String, Vec<ChannelBlock>>,
+    channel_map: BTreeMap<String, (String, usize)>,
+}
+
+impl<W: MdfWrite> MdfWriter<W> {
+    /// Create a new MdfWriter from any type implementing MdfWrite.
+    ///
+    /// This is the general constructor that works with any writer backend.
+    pub fn from_writer(writer: W) -> Self {
+        MdfWriter {
+            writer,
+            offset: 0,
+            block_positions: BTreeMap::new(),
+            open_dts: BTreeMap::new(),
+            dt_counter: 0,
+            last_dg: None,
+            cg_to_dg: BTreeMap::new(),
+            cg_offsets: BTreeMap::new(),
+            cg_channels: BTreeMap::new(),
+            channel_map: BTreeMap::new(),
+        }
+    }
+
+    /// Consume the writer and return the underlying writer backend.
+    pub fn into_inner(self) -> W {
+        self.writer
+    }
+
+    /// Get a reference to the underlying writer backend.
+    pub fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Get a mutable reference to the underlying writer backend.
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
+}
+
+impl MdfWriter<VecWriter> {
+    /// Create a new MdfWriter that writes to an in-memory buffer.
+    ///
+    /// This is useful for embedded systems or when you want to build
+    /// the MDF data in memory before writing to external storage.
+    pub fn in_memory() -> Self {
+        Self::from_writer(VecWriter::new())
+    }
+
+    /// Create a new MdfWriter with the specified initial buffer capacity.
+    pub fn in_memory_with_capacity(capacity: usize) -> Self {
+        Self::from_writer(VecWriter::with_capacity(capacity))
+    }
 }

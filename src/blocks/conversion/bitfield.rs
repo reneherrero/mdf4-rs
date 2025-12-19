@@ -1,7 +1,9 @@
 use crate::Result;
 use crate::blocks::common::{BlockHeader, BlockParse, read_string_block};
 use crate::blocks::conversion::base::ConversionBlock;
-use crate::parsing::decoder::DecodedValue;
+use crate::types::DecodedValue;
+use alloc::format;
+use alloc::vec::Vec;
 
 pub fn apply_bitfield_text(
     block: &ConversionBlock,
@@ -28,7 +30,8 @@ pub fn apply_bitfield_text(
             continue;
         }
 
-        // First try to use resolved conversions if available
+        // First try to use resolved conversions if available (std only)
+        #[cfg(feature = "std")]
         if let Some(resolved_conversion) = block.get_resolved_conversion(i) {
             let decoded_masked =
                 resolved_conversion.apply_decoded(DecodedValue::UnsignedInteger(masked), &[])?;
@@ -49,7 +52,6 @@ pub fn apply_bitfield_text(
         }
 
         // Fallback to legacy behavior if no resolved data (for backward compatibility)
-        // Note: This should rarely be used now that we have deep resolution
         let off = link_addr as usize;
         if off + 24 > file_data.len() {
             // If we can't access the data, try default conversion as last resort
@@ -69,7 +71,6 @@ pub fn apply_bitfield_text(
         }
 
         // Create nested conversion but don't do deep resolution to avoid double work
-        // since this is fallback code that should rarely execute
         let mut nested = ConversionBlock::from_bytes(&file_data[off..])?;
         let _ = nested.resolve_formula(file_data);
         let decoded_masked =

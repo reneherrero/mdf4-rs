@@ -2,6 +2,9 @@ use crate::{
     Error, Result,
     blocks::common::{BlockHeader, BlockParse},
 };
+use alloc::format;
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 /// DLBLOCK: Data List Block (ordered list of data blocks for signal/reduction)
 pub struct DataListBlock {
