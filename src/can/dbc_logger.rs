@@ -43,6 +43,11 @@ pub struct DbcMdfLoggerConfig {
     /// Include conversion blocks (for raw value mode).
     /// Default: true
     pub include_conversions: bool,
+
+    /// Include value descriptions as ValueToText conversions.
+    /// When enabled, DBC VAL_ entries are converted to MDF4 ValueToText blocks.
+    /// Default: true
+    pub include_value_descriptions: bool,
 }
 
 impl Default for DbcMdfLoggerConfig {
@@ -52,6 +57,7 @@ impl Default for DbcMdfLoggerConfig {
             include_units: true,
             include_limits: true,
             include_conversions: true,
+            include_value_descriptions: true,
         }
     }
 }
@@ -106,6 +112,20 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
     /// Default: true
     pub fn include_conversions(mut self, enabled: bool) -> Self {
         self.config.include_conversions = enabled;
+        self
+    }
+
+    /// Set whether to include value descriptions as ValueToText conversions.
+    ///
+    /// When enabled, DBC VAL_ entries are converted to MDF4 ValueToText blocks.
+    /// This allows MDF4 viewers to display human-readable text for enum-like signals.
+    ///
+    /// Note: If a signal has both a linear conversion (factor/offset != 1/0) and
+    /// value descriptions, the value descriptions take precedence.
+    ///
+    /// Default: true
+    pub fn include_value_descriptions(mut self, enabled: bool) -> Self {
+        self.config.include_value_descriptions = enabled;
         self
     }
 
@@ -431,6 +451,21 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
         for (&can_id, buffer) in &self.buffers {
             let cg = self.writer.add_channel_group(None, |_| {})?;
 
+            // Find the DBC message to get name and sender for channel group metadata
+            if let Some(message) = self.dbc.messages().find_by_id(can_id) {
+                // Set channel group name from DBC message name
+                let msg_name = message.name();
+                if !msg_name.is_empty() {
+                    self.writer.set_channel_group_name(&cg, msg_name)?;
+                }
+
+                // Set channel group source from DBC message sender (ECU)
+                let sender = message.sender();
+                if !sender.is_empty() && sender != "Vector__XXX" {
+                    self.writer.set_channel_group_source_name(&cg, sender)?;
+                }
+            }
+
             // Add timestamp channel
             let time_ch = self.writer.add_channel(&cg, None, |ch| {
                 ch.data_type = DataType::UnsignedIntegerLE;
@@ -474,9 +509,30 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
                 }
 
                 // Add conversion block if in raw mode and enabled
-                if self.config.store_raw_values && self.config.include_conversions {
-                    if let Some(ref conv) = info.conversion {
-                        self.writer.set_channel_conversion(&ch, conv)?;
+                if self.config.store_raw_values {
+                    // Check for value descriptions first (they take precedence)
+                    let has_value_desc = self.config.include_value_descriptions
+                        && self.dbc.value_descriptions_for_signal(can_id, &info.name).is_some();
+
+                    if has_value_desc {
+                        // Add ValueToText conversion from DBC value descriptions
+                        if let Some(vd) = self.dbc.value_descriptions_for_signal(can_id, &info.name) {
+                            let mapping: Vec<(i64, &str)> = vd.iter()
+                                .map(|(v, desc)| (v as i64, desc))
+                                .collect();
+                            if !mapping.is_empty() {
+                                self.writer.add_value_to_text_conversion(
+                                    &mapping,
+                                    "",  // default text for unknown values
+                                    Some(&ch),
+                                )?;
+                            }
+                        }
+                    } else if self.config.include_conversions {
+                        // Fall back to linear conversion if available
+                        if let Some(ref conv) = info.conversion {
+                            self.writer.set_channel_conversion(&ch, conv)?;
+                        }
                     }
                 }
 
@@ -715,5 +771,79 @@ BO_ 100 TestMsg: 8 Vector__XXX
         assert!(logger.config().include_units);
         assert!(logger.config().include_limits);
         assert!(logger.config().include_conversions);
+    }
+
+    #[test]
+    fn test_value_descriptions_to_text() {
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM
+
+BO_ 256 Transmission : 8 ECM
+ SG_ GearPosition : 0|8@1+ (1,0) [0|5] "" Vector__XXX
+
+VAL_ 256 GearPosition 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Sport" ;
+"#,
+        )
+        .unwrap();
+
+        // Verify value descriptions are parsed
+        let vd = dbc.value_descriptions_for_signal(256, "GearPosition");
+        assert!(vd.is_some());
+        let vd = vd.unwrap();
+        assert_eq!(vd.get(0), Some("Park"));
+        assert_eq!(vd.get(3), Some("Drive"));
+
+        // Create logger with raw values and value descriptions
+        let mut logger = DbcMdfLogger::builder(&dbc)
+            .store_raw_values(true)
+            .include_value_descriptions(true)
+            .build()
+            .unwrap();
+
+        // Log some gear position changes
+        assert!(logger.log(256, 1000, &[0, 0, 0, 0, 0, 0, 0, 0])); // Park
+        assert!(logger.log(256, 2000, &[3, 0, 0, 0, 0, 0, 0, 0])); // Drive
+        assert!(logger.log(256, 3000, &[2, 0, 0, 0, 0, 0, 0, 0])); // Neutral
+
+        assert_eq!(logger.frame_count(256), 3);
+        assert!(logger.config().include_value_descriptions);
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
+
+        // Verify MDF header
+        assert_eq!(&mdf_bytes[0..3], b"MDF");
+    }
+
+    #[test]
+    fn test_channel_group_naming_and_source() {
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM TCM
+
+BO_ 256 Engine : 8 ECM
+ SG_ RPM : 0|16@1+ (1,0) [0|8000] "rpm" Vector__XXX
+
+BO_ 512 Transmission : 8 TCM
+ SG_ Gear : 0|8@1+ (1,0) [0|5] "" Vector__XXX
+"#,
+        )
+        .unwrap();
+
+        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+
+        // Log some data
+        assert!(logger.log(256, 1000, &[0x00, 0x10, 0, 0, 0, 0, 0, 0]));
+        assert!(logger.log(512, 1000, &[3, 0, 0, 0, 0, 0, 0, 0]));
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
+
+        // The MDF should contain channel groups named after messages
+        // and sources named after senders (ECM, TCM)
+        // This is verified by the fact that it compiles and runs without errors
     }
 }

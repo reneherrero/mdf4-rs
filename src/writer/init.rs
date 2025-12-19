@@ -8,7 +8,7 @@ use crate::{
     Result,
     blocks::{
         BlockHeader, ChannelBlock, ChannelGroupBlock, DataGroupBlock, HeaderBlock,
-        IdentificationBlock, TextBlock, {ConversionBlock, ConversionType},
+        IdentificationBlock, TextBlock, SourceBlock, {ConversionBlock, ConversionType},
     },
 };
 
@@ -410,5 +410,149 @@ impl<W: MdfWrite> MdfWriter<W> {
 
         let conversion = ConversionBlock::linear(offset, factor);
         self.set_channel_conversion(cn_id, &conversion)
+    }
+
+    /// Sets the acquisition name for an existing channel group.
+    ///
+    /// This creates a text block containing the name and links it
+    /// to the channel group's acq_name_addr field.
+    ///
+    /// # Arguments
+    /// * `cg_id` - The channel group ID returned from `add_channel_group()`
+    /// * `name` - The acquisition/group name (e.g., "Engine", "Transmission")
+    ///
+    /// # Example
+    /// ```ignore
+    /// let cg = writer.add_channel_group(None, |_| {})?;
+    /// writer.set_channel_group_name(&cg, "Engine_0x100")?;
+    /// ```
+    pub fn set_channel_group_name(&mut self, cg_id: &str, name: &str) -> Result<()> {
+        if name.is_empty() {
+            return Ok(());
+        }
+
+        let cg_pos = self
+            .get_block_position(cg_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+
+        let tx_id = format!("tx_cgname_{}", cg_id);
+        let tx_block = TextBlock::new(name);
+        let tx_bytes = tx_block.to_bytes()?;
+        let tx_pos = self.write_block_with_id(&tx_bytes, &tx_id)?;
+
+        // acq_name_addr is at offset 40 in ChannelGroupBlock (after header + 2 links)
+        const ACQ_NAME_ADDR_OFFSET: u64 = 40;
+        self.update_link(cg_pos + ACQ_NAME_ADDR_OFFSET, tx_pos)?;
+
+        Ok(())
+    }
+
+    /// Sets the comment for an existing channel group.
+    ///
+    /// This creates a text block containing the comment and links it
+    /// to the channel group's comment_addr field.
+    ///
+    /// # Arguments
+    /// * `cg_id` - The channel group ID returned from `add_channel_group()`
+    /// * `comment` - The comment/description string
+    pub fn set_channel_group_comment(&mut self, cg_id: &str, comment: &str) -> Result<()> {
+        if comment.is_empty() {
+            return Ok(());
+        }
+
+        let cg_pos = self
+            .get_block_position(cg_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+
+        let tx_id = format!("tx_cgcomment_{}", cg_id);
+        let tx_block = TextBlock::new(comment);
+        let tx_bytes = tx_block.to_bytes()?;
+        let tx_pos = self.write_block_with_id(&tx_bytes, &tx_id)?;
+
+        // comment_addr is at offset 64 in ChannelGroupBlock
+        const COMMENT_ADDR_OFFSET: u64 = 64;
+        self.update_link(cg_pos + COMMENT_ADDR_OFFSET, tx_pos)?;
+
+        Ok(())
+    }
+
+    /// Sets the acquisition source for an existing channel group.
+    ///
+    /// This writes a source block with the given name and links it
+    /// to the channel group's acq_source_addr field.
+    ///
+    /// # Arguments
+    /// * `cg_id` - The channel group ID returned from `add_channel_group()`
+    /// * `source` - The source block to attach
+    /// * `source_name` - Optional name for the source (e.g., ECU name)
+    ///
+    /// # Example
+    /// ```ignore
+    /// use mdf4_rs::blocks::{SourceBlock, SourceType, BusType};
+    ///
+    /// let cg = writer.add_channel_group(None, |_| {})?;
+    /// let source = SourceBlock::can_ecu();
+    /// writer.set_channel_group_source(&cg, &source, Some("ECM"))?;
+    /// ```
+    pub fn set_channel_group_source(
+        &mut self,
+        cg_id: &str,
+        source: &SourceBlock,
+        source_name: Option<&str>,
+    ) -> Result<()> {
+        let cg_pos = self
+            .get_block_position(cg_id)
+            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+
+        let si_count = self
+            .block_positions
+            .keys()
+            .filter(|k| k.starts_with("si_"))
+            .count();
+        let si_id = format!("si_{}", si_count);
+
+        // Clone source and optionally set name
+        let mut source = source.clone();
+
+        // Write source name text block if provided
+        if let Some(name) = source_name {
+            if !name.is_empty() {
+                let tx_id = format!("tx_siname_{}", si_id);
+                let tx_block = TextBlock::new(name);
+                let tx_bytes = tx_block.to_bytes()?;
+                let tx_pos = self.write_block_with_id(&tx_bytes, &tx_id)?;
+                source.name_addr = tx_pos;
+            }
+        }
+
+        let si_bytes = source.to_bytes()?;
+        let si_pos = self.write_block_with_id(&si_bytes, &si_id)?;
+
+        // Update name link in the source block if we wrote one
+        if source.name_addr != 0 {
+            // name_addr is at offset 24 in SourceBlock
+            self.update_link(si_pos + 24, source.name_addr)?;
+        }
+
+        // acq_source_addr is at offset 48 in ChannelGroupBlock
+        const ACQ_SOURCE_ADDR_OFFSET: u64 = 48;
+        self.update_link(cg_pos + ACQ_SOURCE_ADDR_OFFSET, si_pos)?;
+
+        Ok(())
+    }
+
+    /// Convenience method to set channel group source with just a name.
+    ///
+    /// Creates a CAN ECU source block with the given name.
+    ///
+    /// # Arguments
+    /// * `cg_id` - The channel group ID
+    /// * `ecu_name` - The ECU/sender name
+    pub fn set_channel_group_source_name(&mut self, cg_id: &str, ecu_name: &str) -> Result<()> {
+        if ecu_name.is_empty() {
+            return Ok(());
+        }
+        let source = SourceBlock::can_ecu();
+        self.set_channel_group_source(cg_id, &source, Some(ecu_name))
     }
 }
