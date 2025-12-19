@@ -8,13 +8,13 @@
 //!
 //! ```toml
 //! [dependencies]
-//! mdf4-rs = { version = "0.1", features = ["dbc", "embedded-can"] }
+//! mdf4-rs = { version = "0.1", features = ["dbc", "can"] }
 //! ```
 //!
 //! # Running this example
 //!
 //! ```bash
-//! cargo run --example no_std_write --features dbc,embedded-can
+//! cargo run --example no_std_write --features dbc,can
 //! ```
 
 use embedded_can::{ExtendedId, Frame as CanFrameTrait, Id, StandardId};
@@ -251,7 +251,7 @@ fn main() -> Result<()> {
     println!("\nThe DBC-based logger:");
     println!("  - Uses Dbc::decode() for full DBC support");
     println!("  - Handles multiplexing, value descriptions, etc.");
-    println!("  - Works with embedded-can Frame trait");
+    println!("  - Works with the embedded-can Frame trait");
 
     Ok(())
 }

@@ -388,4 +388,167 @@ impl ConversionBlock {
         }
         Ok(buf)
     }
+
+    /// Creates an identity conversion (1:1, no change).
+    ///
+    /// This is useful when you want to explicitly indicate that no conversion
+    /// is applied, while still having a conversion block for consistency.
+    ///
+    /// # Example
+    /// ```
+    /// use mdf4_rs::blocks::ConversionBlock;
+    ///
+    /// let conv = ConversionBlock::identity();
+    /// ```
+    pub fn identity() -> Self {
+        Self {
+            header: BlockHeader {
+                id: String::from("##CC"),
+                reserved0: 0,
+                block_len: 0, // Will be calculated during to_bytes()
+                links_nr: 4,
+            },
+            cc_tx_name: None,
+            cc_md_unit: None,
+            cc_md_comment: None,
+            cc_cc_inverse: None,
+            cc_ref: Vec::new(),
+            cc_type: ConversionType::Identity,
+            cc_precision: 0,
+            cc_flags: 0,
+            cc_ref_count: 0,
+            cc_val_count: 0,
+            cc_phy_range_min: None,
+            cc_phy_range_max: None,
+            cc_val: Vec::new(),
+            formula: None,
+            resolved_texts: None,
+            resolved_conversions: None,
+            default_conversion: None,
+        }
+    }
+
+    /// Creates a linear conversion: `physical = offset + factor * raw`.
+    ///
+    /// This is the most common conversion type, used for scaling and offset
+    /// adjustments. The MDF 4.1 specification defines linear conversion as:
+    /// `y = P1 + P2 * x` where P1 is the offset and P2 is the factor.
+    ///
+    /// # Arguments
+    /// * `offset` - The offset value (P1 in the MDF spec)
+    /// * `factor` - The scaling factor (P2 in the MDF spec)
+    ///
+    /// # Example
+    /// ```
+    /// use mdf4_rs::blocks::ConversionBlock;
+    ///
+    /// // Convert raw temperature: physical = -40.0 + 0.1 * raw
+    /// let temp_conv = ConversionBlock::linear(-40.0, 0.1);
+    ///
+    /// // Convert RPM: physical = 0.0 + 0.25 * raw
+    /// let rpm_conv = ConversionBlock::linear(0.0, 0.25);
+    /// ```
+    pub fn linear(offset: f64, factor: f64) -> Self {
+        Self {
+            header: BlockHeader {
+                id: String::from("##CC"),
+                reserved0: 0,
+                block_len: 0, // Will be calculated during to_bytes()
+                links_nr: 4,
+            },
+            cc_tx_name: None,
+            cc_md_unit: None,
+            cc_md_comment: None,
+            cc_cc_inverse: None,
+            cc_ref: Vec::new(),
+            cc_type: ConversionType::Linear,
+            cc_precision: 0,
+            cc_flags: 0,
+            cc_ref_count: 0,
+            cc_val_count: 2,
+            cc_phy_range_min: None,
+            cc_phy_range_max: None,
+            cc_val: alloc::vec![offset, factor],
+            formula: None,
+            resolved_texts: None,
+            resolved_conversions: None,
+            default_conversion: None,
+        }
+    }
+
+    /// Creates a rational conversion: `physical = (P1 + P2*x + P3*x²) / (P4 + P5*x + P6*x²)`.
+    ///
+    /// Rational conversions are used for more complex non-linear transformations.
+    ///
+    /// # Arguments
+    /// * `p1` - Numerator constant term
+    /// * `p2` - Numerator linear coefficient
+    /// * `p3` - Numerator quadratic coefficient
+    /// * `p4` - Denominator constant term
+    /// * `p5` - Denominator linear coefficient
+    /// * `p6` - Denominator quadratic coefficient
+    ///
+    /// # Example
+    /// ```
+    /// use mdf4_rs::blocks::ConversionBlock;
+    ///
+    /// // Simple linear via rational: physical = (0 + 2*x + 0*x²) / (1 + 0*x + 0*x²) = 2*x
+    /// let conv = ConversionBlock::rational(0.0, 2.0, 0.0, 1.0, 0.0, 0.0);
+    /// ```
+    pub fn rational(p1: f64, p2: f64, p3: f64, p4: f64, p5: f64, p6: f64) -> Self {
+        Self {
+            header: BlockHeader {
+                id: String::from("##CC"),
+                reserved0: 0,
+                block_len: 0,
+                links_nr: 4,
+            },
+            cc_tx_name: None,
+            cc_md_unit: None,
+            cc_md_comment: None,
+            cc_cc_inverse: None,
+            cc_ref: Vec::new(),
+            cc_type: ConversionType::Rational,
+            cc_precision: 0,
+            cc_flags: 0,
+            cc_ref_count: 0,
+            cc_val_count: 6,
+            cc_phy_range_min: None,
+            cc_phy_range_max: None,
+            cc_val: alloc::vec![p1, p2, p3, p4, p5, p6],
+            formula: None,
+            resolved_texts: None,
+            resolved_conversions: None,
+            default_conversion: None,
+        }
+    }
+
+    /// Check if this is a trivial identity conversion that can be omitted.
+    ///
+    /// Returns `true` if:
+    /// - The conversion type is Identity, OR
+    /// - The conversion type is Linear with offset=0 and factor=1
+    pub fn is_identity(&self) -> bool {
+        match self.cc_type {
+            ConversionType::Identity => true,
+            ConversionType::Linear => {
+                self.cc_val.len() >= 2
+                    && self.cc_val[0] == 0.0
+                    && self.cc_val[1] == 1.0
+            }
+            _ => false,
+        }
+    }
+
+    /// Set the physical range limits for this conversion.
+    ///
+    /// # Arguments
+    /// * `min` - Minimum physical value
+    /// * `max` - Maximum physical value
+    pub fn with_physical_range(mut self, min: f64, max: f64) -> Self {
+        self.cc_phy_range_min = Some(min);
+        self.cc_phy_range_max = Some(max);
+        self.cc_flags |= 0b10; // Set physical range valid flag
+        self
+    }
 }

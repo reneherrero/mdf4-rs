@@ -10,6 +10,8 @@
 //! - Uses `Dbc::decode()` for full DBC support (multiplexing, value descriptions, etc.)
 //! - Batch processing for efficient logging
 //! - Support for both Standard (11-bit) and Extended (29-bit) CAN IDs
+//! - Full metadata preservation (units, conversions, limits)
+//! - Raw value storage with conversion blocks for maximum precision
 //!
 //! # Example
 //!
@@ -19,8 +21,10 @@
 //! // Parse DBC file
 //! let dbc = dbc_rs::Dbc::parse(dbc_content)?;
 //!
-//! // Create logger
-//! let mut logger = DbcMdfLogger::new(&dbc)?;
+//! // Create logger with full metadata
+//! let mut logger = DbcMdfLogger::builder(&dbc)
+//!     .store_raw_values(true)  // Store raw values with conversions
+//!     .build()?;
 //!
 //! // Log CAN frames
 //! logger.log(0x100, timestamp_us, &frame_data);
@@ -29,10 +33,16 @@
 //! let mdf_bytes = logger.finalize()?;
 //! ```
 
+mod dbc_compat;
 mod dbc_logger;
 mod timestamped_frame;
 
-pub use dbc_logger::DbcMdfLogger;
+pub use dbc_compat::{
+    extract_message_info, signal_to_bit_count, signal_to_conversion,
+    signal_to_conversion_with_range, signal_to_data_type, value_descriptions_to_mapping,
+    MessageInfo, SignalInfo,
+};
+pub use dbc_logger::{DbcMdfLogger, DbcMdfLoggerBuilder, DbcMdfLoggerConfig};
 pub use timestamped_frame::TimestampedFrame;
 
 // Re-export commonly used dbc-rs types

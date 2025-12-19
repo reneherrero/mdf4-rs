@@ -119,7 +119,7 @@ pub trait BlockParse<'a>: Sized {
     fn from_bytes(bytes: &'a [u8]) -> Result<Self>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DataType {
     UnsignedIntegerLE,
