@@ -1,6 +1,6 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.0-alpha1"
+version = "0.1.0-alpha.1"
 edition = "2024"
 description = "mdf4-rs is a Rust library for working with Measurement Data Format (ASAM MDF4) files."
 license = "MIT"
