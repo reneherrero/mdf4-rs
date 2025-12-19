@@ -1,19 +1,22 @@
 //! CAN bus integration for MDF4 files.
 //!
-//! This module provides utilities for logging CAN bus data to MDF4 files
-//! using signal definitions from DBC files. It integrates with:
-//! - [`dbc-rs`](https://crates.io/crates/dbc-rs) for DBC parsing and signal decoding
-//! - [`embedded-can`](https://crates.io/crates/embedded-can) for hardware-agnostic CAN frames
+//! This module provides utilities for logging CAN bus data to MDF4 files.
+//! It supports two modes:
+//!
+//! 1. **With DBC**: Use [`DbcMdfLogger`] for full signal decoding with metadata
+//! 2. **Without DBC**: Use [`RawCanLogger`] for raw frame capture
 //!
 //! # Features
 //!
 //! - Uses `Dbc::decode()` for full DBC support (multiplexing, value descriptions, etc.)
+//! - Raw frame logging when no DBC is available
 //! - Batch processing for efficient logging
 //! - Support for both Standard (11-bit) and Extended (29-bit) CAN IDs
 //! - Full metadata preservation (units, conversions, limits)
 //! - Raw value storage with conversion blocks for maximum precision
+//! - **CAN FD support**: Up to 64 bytes per frame with BRS/ESI flags
 //!
-//! # Example
+//! # Example with DBC
 //!
 //! ```ignore
 //! use mdf4_rs::can::DbcMdfLogger;
@@ -23,7 +26,7 @@
 //!
 //! // Create logger with full metadata
 //! let mut logger = DbcMdfLogger::builder(&dbc)
-//!     .store_raw_values(true)  // Store raw values with conversions
+//!     .store_raw_values(true)
 //!     .build()?;
 //!
 //! // Log CAN frames
@@ -32,9 +35,26 @@
 //! // Get MDF bytes
 //! let mdf_bytes = logger.finalize()?;
 //! ```
+//!
+//! # Example without DBC (Raw Logging)
+//!
+//! ```ignore
+//! use mdf4_rs::can::RawCanLogger;
+//!
+//! // Create raw logger (no DBC needed)
+//! let mut logger = RawCanLogger::new()?;
+//!
+//! // Log raw CAN frames
+//! logger.log(0x100, timestamp_us, &frame_data);
+//!
+//! // Get MDF bytes
+//! let mdf_bytes = logger.finalize()?;
+//! ```
 
 mod dbc_compat;
 mod dbc_logger;
+pub mod fd;
+mod raw_logger;
 mod timestamped_frame;
 
 pub use dbc_compat::{
@@ -43,6 +63,8 @@ pub use dbc_compat::{
     MessageInfo, SignalInfo,
 };
 pub use dbc_logger::{DbcMdfLogger, DbcMdfLoggerBuilder, DbcMdfLoggerConfig};
+pub use fd::{dlc_to_len, len_to_dlc, FdFlags, FdFrame, SimpleFdFrame, MAX_FD_DATA_LEN};
+pub use raw_logger::RawCanLogger;
 pub use timestamped_frame::TimestampedFrame;
 
 // Re-export commonly used dbc-rs types

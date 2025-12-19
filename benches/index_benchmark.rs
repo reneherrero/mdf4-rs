@@ -210,8 +210,6 @@ fn main() -> mdf4_rs::Result<()> {
         );
 
         // Memory estimation
-        let record_size = num_channels * 8; // 64-bit floats
-        let data_size = record_size * num_records;
         println!("\nEstimated memory usage:");
         println!(
             "  Old method (MDF::from_file): ~{:.2} MB (entire file in memory)",

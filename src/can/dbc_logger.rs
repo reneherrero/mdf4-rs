@@ -6,7 +6,20 @@
 //! - Full metadata preservation (units, conversions, limits)
 //! - Raw value storage with conversion blocks for maximum precision
 //! - Physical value storage for compatibility
-//! - Multiplexed signal support via dbc-rs
+//! - Multiplexed signal support with separate channel groups per mux value
+//!
+//! # Multiplexed Signals
+//!
+//! For DBC messages with multiplexed signals (using M/m0/m1/etc. notation),
+//! the logger creates separate MDF4 channel groups for each multiplexor value.
+//! For example, a message "DiagResponse" with mux values 0, 1, 2 will create:
+//! - "DiagResponse_Mux0"
+//! - "DiagResponse_Mux1"
+//! - "DiagResponse_Mux2"
+//!
+//! Each group contains only the signals active for that mux value, plus the
+//! multiplexor switch signal itself. Non-multiplexed signals are included in
+//! all groups.
 //!
 //! # Storage Modes
 //!
@@ -20,10 +33,16 @@
 //!    raw and physical values.
 
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::dbc_compat::SignalInfo;
+
+/// Key for identifying a specific channel group buffer.
+/// For non-multiplexed messages: (can_id, None)
+/// For multiplexed messages: (can_id, Some(mux_value))
+type BufferKey = (u32, Option<u64>);
 
 /// Configuration for DbcMdfLogger.
 #[derive(Debug, Clone)]
@@ -220,6 +239,15 @@ struct ChannelIds {
     signal_channels: Vec<String>,
 }
 
+/// Information about a multiplexed message.
+#[derive(Debug)]
+struct MultiplexInfo {
+    /// Name of the multiplexor switch signal
+    switch_name: String,
+    /// All mux values used by signals in this message
+    mux_values: BTreeSet<u64>,
+}
+
 /// High-level CAN logger that combines DBC signal definitions with MDF writing.
 ///
 /// This provides a simple API for logging CAN bus data to MDF files using
@@ -257,10 +285,15 @@ struct ChannelIds {
 pub struct DbcMdfLogger<'dbc, W: crate::writer::MdfWrite> {
     dbc: &'dbc dbc_rs::Dbc,
     config: DbcMdfLoggerConfig,
-    buffers: BTreeMap<u32, MessageBuffer>,
+    /// Buffers keyed by (can_id, Option<mux_value>)
+    buffers: BTreeMap<BufferKey, MessageBuffer>,
     writer: crate::MdfWriter<W>,
-    channel_groups: BTreeMap<u32, String>,
-    channel_ids: BTreeMap<u32, ChannelIds>,
+    /// Channel groups keyed by (can_id, Option<mux_value>)
+    channel_groups: BTreeMap<BufferKey, String>,
+    /// Channel IDs keyed by (can_id, Option<mux_value>)
+    channel_ids: BTreeMap<BufferKey, ChannelIds>,
+    /// Multiplexed message info keyed by can_id
+    mux_info: BTreeMap<u32, MultiplexInfo>,
     initialized: bool,
 }
 
@@ -315,16 +348,67 @@ impl<'dbc> DbcMdfLogger<'dbc, crate::writer::FileWriter> {
 impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
     /// Create a logger with custom configuration.
     fn with_config(dbc: &'dbc dbc_rs::Dbc, writer: crate::MdfWriter<W>, config: DbcMdfLoggerConfig) -> Self {
-        // Pre-create buffers for each message in the DBC
         let mut buffers = BTreeMap::new();
+        let mut mux_info = BTreeMap::new();
+
         for message in dbc.messages().iter() {
-            let signals: Vec<SignalInfo> = message
-                .signals()
+            let can_id = message.id();
+            let signals = message.signals();
+
+            // Check if this message has multiplexed signals
+            let mut switch_name: Option<String> = None;
+            let mut mux_values: BTreeSet<u64> = BTreeSet::new();
+
+            for signal in signals.iter() {
+                if signal.is_multiplexer_switch() {
+                    switch_name = Some(String::from(signal.name()));
+                }
+                if let Some(mux_val) = signal.multiplexer_switch_value() {
+                    mux_values.insert(mux_val);
+                }
+            }
+
+            if let Some(switch) = switch_name {
+                if !mux_values.is_empty() {
+                    // This is a multiplexed message - create separate buffers per mux value
+                    mux_info.insert(can_id, MultiplexInfo {
+                        switch_name: switch.clone(),
+                        mux_values: mux_values.clone(),
+                    });
+
+                    for mux_val in &mux_values {
+                        // Collect signals for this mux value:
+                        // - The multiplexor switch signal
+                        // - Non-multiplexed signals
+                        // - Signals with this specific mux value
+                        let mut mux_signals: Vec<SignalInfo> = Vec::new();
+
+                        for signal in signals.iter() {
+                            let include = signal.is_multiplexer_switch()
+                                || signal.multiplexer_switch_value() == Some(*mux_val)
+                                || (signal.multiplexer_switch_value().is_none()
+                                    && !signal.is_multiplexer_switch());
+
+                            if include {
+                                mux_signals.push(SignalInfo::from_signal(signal));
+                            }
+                        }
+
+                        if !mux_signals.is_empty() {
+                            buffers.insert((can_id, Some(*mux_val)), MessageBuffer::new(mux_signals));
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            // Non-multiplexed message - single buffer
+            let all_signals: Vec<SignalInfo> = signals
                 .iter()
                 .map(SignalInfo::from_signal)
                 .collect();
-            if !signals.is_empty() {
-                buffers.insert(message.id(), MessageBuffer::new(signals));
+            if !all_signals.is_empty() {
+                buffers.insert((can_id, None), MessageBuffer::new(all_signals));
             }
         }
 
@@ -335,6 +419,7 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             writer,
             channel_groups: BTreeMap::new(),
             channel_ids: BTreeMap::new(),
+            mux_info,
             initialized: false,
         }
     }
@@ -363,6 +448,27 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
         self.log_internal(can_id, timestamp_us, data, true)
     }
 
+    /// Log a CAN FD frame (up to 64 bytes).
+    ///
+    /// This is the same as `log()` but accepts larger data payloads for CAN FD.
+    /// The FD flags (BRS/ESI) are not stored since this logger focuses on
+    /// decoded signal values rather than raw frame data.
+    ///
+    /// # Arguments
+    /// * `can_id` - The CAN message ID (11-bit or 29-bit)
+    /// * `timestamp_us` - Timestamp in microseconds
+    /// * `data` - Raw frame data (up to 64 bytes for CAN FD)
+    #[inline]
+    pub fn log_fd(&mut self, can_id: u32, timestamp_us: u64, data: &[u8]) -> bool {
+        self.log_internal(can_id, timestamp_us, data, false)
+    }
+
+    /// Log a CAN FD frame with extended ID.
+    #[inline]
+    pub fn log_fd_extended(&mut self, can_id: u32, timestamp_us: u64, data: &[u8]) -> bool {
+        self.log_internal(can_id, timestamp_us, data, true)
+    }
+
     /// Internal logging implementation.
     #[inline]
     fn log_internal(&mut self, can_id: u32, timestamp_us: u64, data: &[u8], is_extended: bool) -> bool {
@@ -370,7 +476,23 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
         if let Ok(decoded) = self.dbc.decode(can_id, data, is_extended) {
             let dbc_id = if is_extended { can_id | 0x8000_0000 } else { can_id };
 
-            if let Some(buffer) = self.buffers.get_mut(&dbc_id) {
+            // Determine the buffer key based on whether this is a multiplexed message
+            let buffer_key = if let Some(mux) = self.mux_info.get(&dbc_id) {
+                // Find the mux value from the decoded signals
+                let mux_value = decoded
+                    .iter()
+                    .find(|d| d.name == mux.switch_name)
+                    .map(|d| d.raw_value as u64);
+
+                match mux_value {
+                    Some(val) if mux.mux_values.contains(&val) => (dbc_id, Some(val)),
+                    _ => return false, // Unknown mux value or switch not found
+                }
+            } else {
+                (dbc_id, None)
+            };
+
+            if let Some(buffer) = self.buffers.get_mut(&buffer_key) {
                 if self.config.store_raw_values {
                     // Extract raw values
                     let raw_values: Vec<i64> = buffer
@@ -420,6 +542,23 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
         }
     }
 
+    /// Log a CAN FD frame using the FdFrame trait.
+    ///
+    /// This supports frames up to 64 bytes. The FD flags (BRS/ESI) are not
+    /// stored since this logger focuses on decoded signal values.
+    #[cfg(feature = "can")]
+    #[inline]
+    pub fn log_fd_frame<F: super::fd::FdFrame>(&mut self, timestamp_us: u64, frame: &F) -> bool {
+        match frame.id() {
+            embedded_can::Id::Standard(id) => {
+                self.log_fd(id.as_raw() as u32, timestamp_us, frame.data())
+            }
+            embedded_can::Id::Extended(id) => {
+                self.log_fd_extended(id.as_raw(), timestamp_us, frame.data())
+            }
+        }
+    }
+
     /// Flush buffered data to the MDF writer.
     ///
     /// This writes all accumulated CAN data to the MDF file and clears the buffer.
@@ -428,9 +567,9 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             self.initialize_mdf()?;
         }
 
-        // Write data for each CAN ID
-        for can_id in self.buffers.keys().copied().collect::<Vec<_>>() {
-            self.write_message_data(can_id)?;
+        // Write data for each buffer key
+        for buffer_key in self.buffers.keys().copied().collect::<Vec<_>>() {
+            self.write_message_data(buffer_key)?;
         }
 
         // Clear all buffers
@@ -447,16 +586,22 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
 
         self.writer.init_mdf_file()?;
 
-        // Create a channel group for each message
-        for (&can_id, buffer) in &self.buffers {
+        // Create a channel group for each buffer (message or mux-specific group)
+        for (&buffer_key, buffer) in &self.buffers {
+            let (can_id, mux_value) = buffer_key;
             let cg = self.writer.add_channel_group(None, |_| {})?;
 
             // Find the DBC message to get name and sender for channel group metadata
             if let Some(message) = self.dbc.messages().find_by_id(can_id) {
                 // Set channel group name from DBC message name
+                // For multiplexed messages, append "_Mux{value}"
                 let msg_name = message.name();
                 if !msg_name.is_empty() {
-                    self.writer.set_channel_group_name(&cg, msg_name)?;
+                    let group_name = match mux_value {
+                        Some(val) => alloc::format!("{}_Mux{}", msg_name, val),
+                        None => String::from(msg_name),
+                    };
+                    self.writer.set_channel_group_name(&cg, &group_name)?;
                 }
 
                 // Set channel group source from DBC message sender (ECU)
@@ -467,9 +612,13 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             }
 
             // Add timestamp channel
+            let time_name = match mux_value {
+                Some(val) => alloc::format!("Time_0x{:X}_Mux{}", can_id, val),
+                None => alloc::format!("Time_0x{:X}", can_id),
+            };
             let time_ch = self.writer.add_channel(&cg, None, |ch| {
                 ch.data_type = DataType::UnsignedIntegerLE;
-                ch.name = Some(alloc::format!("Time_0x{:X}", can_id));
+                ch.name = Some(time_name.clone());
                 ch.bit_count = 64;
             })?;
             self.writer.set_time_channel(&time_ch)?;
@@ -540,8 +689,8 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
                 prev_ch = ch;
             }
 
-            self.channel_groups.insert(can_id, cg);
-            self.channel_ids.insert(can_id, ChannelIds {
+            self.channel_groups.insert(buffer_key, cg);
+            self.channel_ids.insert(buffer_key, ChannelIds {
                 time_channel: time_ch,
                 signal_channels,
             });
@@ -551,16 +700,16 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
         Ok(())
     }
 
-    /// Write data for a specific message.
-    fn write_message_data(&mut self, can_id: u32) -> crate::Result<()> {
+    /// Write data for a specific buffer key (message or mux-specific group).
+    fn write_message_data(&mut self, buffer_key: BufferKey) -> crate::Result<()> {
         use crate::DecodedValue;
 
-        let cg = match self.channel_groups.get(&can_id) {
+        let cg = match self.channel_groups.get(&buffer_key) {
             Some(cg) => cg.clone(),
             None => return Ok(()),
         };
 
-        let buffer = match self.buffers.get(&can_id) {
+        let buffer = match self.buffers.get(&buffer_key) {
             Some(b) if !b.timestamps.is_empty() => b,
             _ => return Ok(()),
         };
@@ -612,26 +761,57 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
     }
 
     /// Get the number of frames logged for a specific CAN ID.
+    ///
+    /// For multiplexed messages, this returns the sum of frames across all mux values.
     pub fn frame_count(&self, can_id: u32) -> usize {
         self.buffers
-            .get(&can_id)
+            .iter()
+            .filter(|((id, _), _)| *id == can_id)
+            .map(|(_, b)| b.frame_count())
+            .sum()
+    }
+
+    /// Get the number of frames logged for a specific CAN ID and mux value.
+    ///
+    /// For non-multiplexed messages, use `mux_value = None`.
+    pub fn frame_count_mux(&self, can_id: u32, mux_value: Option<u64>) -> usize {
+        self.buffers
+            .get(&(can_id, mux_value))
             .map(|b| b.frame_count())
             .unwrap_or(0)
     }
 
-    /// Get all CAN IDs being logged.
+    /// Get all unique CAN IDs being logged.
     pub fn can_ids(&self) -> impl Iterator<Item = u32> + '_ {
-        self.buffers.keys().copied()
+        let mut ids: BTreeSet<u32> = BTreeSet::new();
+        for (id, _) in self.buffers.keys() {
+            ids.insert(*id);
+        }
+        ids.into_iter()
     }
 
-    /// Get the total number of messages being logged.
-    pub fn message_count(&self) -> usize {
+    /// Get the total number of channel groups being logged.
+    ///
+    /// For multiplexed messages, each mux value is counted as a separate group.
+    pub fn channel_group_count(&self) -> usize {
         self.buffers.len()
     }
 
-    /// Get the total number of signals across all messages.
+    /// Get the total number of signals across all channel groups.
     pub fn total_signal_count(&self) -> usize {
         self.buffers.values().map(|b| b.signals.len()).sum()
+    }
+
+    /// Check if a CAN ID has multiplexed signals.
+    pub fn is_multiplexed(&self, can_id: u32) -> bool {
+        self.mux_info.contains_key(&can_id)
+    }
+
+    /// Get the mux values for a multiplexed message.
+    ///
+    /// Returns `None` if the message is not multiplexed.
+    pub fn mux_values(&self, can_id: u32) -> Option<impl Iterator<Item = u64> + '_> {
+        self.mux_info.get(&can_id).map(|info| info.mux_values.iter().copied())
     }
 }
 
@@ -845,5 +1025,127 @@ BO_ 512 Transmission : 8 TCM
         // The MDF should contain channel groups named after messages
         // and sources named after senders (ECM, TCM)
         // This is verified by the fact that it compiles and runs without errors
+    }
+
+    #[test]
+    fn test_multiplexed_signals() {
+        // DBC with multiplexed signals
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM
+
+BO_ 256 DiagResponse : 8 ECM
+ SG_ ServiceID M : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ SessionType m16 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DataLength m34 : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ DataValue m34 : 16|16@1+ (1,0) [0|65535] "" Vector__XXX
+ SG_ NormalSignal : 56|8@1+ (1,0) [0|255] "" Vector__XXX
+"#,
+        )
+        .unwrap();
+
+        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+
+        // Verify multiplexed message detection
+        assert!(logger.is_multiplexed(256));
+        let mux_vals: Vec<u64> = logger.mux_values(256).unwrap().collect();
+        assert_eq!(mux_vals.len(), 2); // m16 and m34
+        assert!(mux_vals.contains(&16));
+        assert!(mux_vals.contains(&34));
+
+        // Should have 2 channel groups (one per mux value)
+        assert_eq!(logger.channel_group_count(), 2);
+
+        // Log frames with ServiceID=16 (SessionType available)
+        // ServiceID=16, SessionType=1, NormalSignal=42
+        assert!(logger.log(256, 1000, &[16, 1, 0, 0, 0, 0, 0, 42]));
+        assert!(logger.log(256, 2000, &[16, 2, 0, 0, 0, 0, 0, 43]));
+
+        // Log frames with ServiceID=34 (DataLength and DataValue available)
+        // ServiceID=34, DataLength=4, DataValue=0x1234, NormalSignal=44
+        assert!(logger.log(256, 3000, &[34, 4, 0x34, 0x12, 0, 0, 0, 44]));
+        assert!(logger.log(256, 4000, &[34, 8, 0x78, 0x56, 0, 0, 0, 45]));
+
+        // Unknown mux value should not be logged
+        assert!(!logger.log(256, 5000, &[99, 0, 0, 0, 0, 0, 0, 0]));
+
+        // Check frame counts per mux value
+        assert_eq!(logger.frame_count_mux(256, Some(16)), 2);
+        assert_eq!(logger.frame_count_mux(256, Some(34)), 2);
+        assert_eq!(logger.frame_count(256), 4); // Total
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
+        assert_eq!(&mdf_bytes[0..3], b"MDF");
+
+        // Write to temp file and read back
+        let temp_path = std::env::temp_dir().join("mux_test.mf4");
+        std::fs::write(&temp_path, &mdf_bytes).unwrap();
+
+        let mdf = crate::MDF::from_file(temp_path.to_str().unwrap()).unwrap();
+        let groups = mdf.channel_groups();
+
+        // Should have 2 channel groups: DiagResponse_Mux16 and DiagResponse_Mux34
+        assert_eq!(groups.len(), 2);
+
+        for group in groups.iter() {
+            let name = group.name().unwrap().unwrap_or_default();
+            assert!(
+                name.starts_with("DiagResponse_Mux"),
+                "Expected DiagResponse_Mux*, got {}",
+                name
+            );
+        }
+
+        // Cleanup
+        std::fs::remove_file(&temp_path).ok();
+    }
+
+    #[test]
+    fn test_non_multiplexed_unchanged() {
+        // Verify non-multiplexed messages still work correctly
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM
+
+BO_ 256 Engine : 8 ECM
+ SG_ RPM : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
+ SG_ Temp : 16|8@1+ (1,-40) [-40|215] "C" Vector__XXX
+"#,
+        )
+        .unwrap();
+
+        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+
+        // Should not be multiplexed
+        assert!(!logger.is_multiplexed(256));
+        assert!(logger.mux_values(256).is_none());
+        assert_eq!(logger.channel_group_count(), 1);
+
+        // Log frames
+        assert!(logger.log(256, 1000, &[0x40, 0x1F, 0x5A, 0, 0, 0, 0, 0]));
+        assert!(logger.log(256, 2000, &[0x80, 0x3E, 0x64, 0, 0, 0, 0, 0]));
+
+        assert_eq!(logger.frame_count(256), 2);
+        assert_eq!(logger.frame_count_mux(256, None), 2);
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
+
+        // Write to temp file and read back
+        let temp_path = std::env::temp_dir().join("non_mux_test.mf4");
+        std::fs::write(&temp_path, &mdf_bytes).unwrap();
+
+        let mdf = crate::MDF::from_file(temp_path.to_str().unwrap()).unwrap();
+        let groups = mdf.channel_groups();
+        assert_eq!(groups.len(), 1);
+
+        let name = groups[0].name().unwrap().unwrap_or_default();
+        assert_eq!(name, "Engine");
+
+        // Cleanup
+        std::fs::remove_file(&temp_path).ok();
     }
 }
