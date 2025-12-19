@@ -9,7 +9,7 @@ readme = "README.md"
 exclude = ["examples/", "tests/", "benches/"]
 
 [features]
-default = ["std"]
+default = ["std", "embedded-can", "dbc"]
 std = ["alloc", "serde", "serde_json"]
 alloc = []
 serde = ["dep:serde"]
@@ -17,16 +17,23 @@ embedded-can = ["dep:embedded-can"]
 dbc = ["dep:dbc-rs", "alloc"]
 
 [dependencies]
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc"], optional = true }
+serde = { version = "1.0", default-features = false, features = [
+    "derive",
+    "alloc",
+], optional = true }
 serde_json = { version = "1.0", optional = true }
 embedded-can = { version = "0.4", optional = true }
-dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = ["alloc"], optional = true }
+dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = [
+    "alloc",
+], optional = true }
 
 [dev-dependencies]
 criterion = "0.8.1"
 serde = { version = "1.0", features = ["derive"] }
 embedded-can = "0.4"
-dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = ["alloc"] }
+dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = [
+    "alloc",
+] }
 
 [[bench]]
 name = "index_benchmark"
