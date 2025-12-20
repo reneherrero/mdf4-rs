@@ -54,10 +54,10 @@ writer.add_channel(&cg, None, |ch| {
 ### CAN Logging
 
 ```rust
-use mdf4_rs::can::DbcMdfLogger;
+use mdf4_rs::can::CanDbcLogger;
 
 let dbc = dbc_rs::Dbc::parse(dbc_content)?;
-let mut logger = DbcMdfLogger::builder(&dbc).build()?;
+let mut logger = CanDbcLogger::builder(&dbc).build()?;
 logger.log(0x100, timestamp_us, &frame_data);
 let mdf_bytes = logger.finalize()?;
 ```
@@ -68,6 +68,17 @@ let mdf_bytes = logger.finalize()?;
 |-----------|-----------------|----------------|
 | 1 MB | 6x faster | 50x less |
 | 40 MB | 335x faster | 50x less |
+
+## Examples
+
+See [`examples/`](./examples/) for complete working examples:
+
+- `can_logging.rs` - CAN bus logging workflows (decoded, raw, overlay, streaming)
+- `read_file.rs` - Reading MDF4 files
+- `write_file.rs` - Creating MDF4 files
+- `index_operations.rs` - Efficient file indexing
+- `merge_files.rs` - Merging multiple MDF4 files
+- `cut_file.rs` - Extracting time segments
 
 ## Documentation
 

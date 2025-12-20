@@ -18,8 +18,8 @@
 //! ```
 
 use embedded_can::{ExtendedId, Frame as CanFrameTrait, Id, StandardId};
-use mdf4_rs::can::DbcMdfLogger;
 use mdf4_rs::Result;
+use mdf4_rs::can::CanDbcLogger;
 
 /// A simple CAN frame implementation for demonstration.
 /// In a real embedded system, you'd use your HAL's CAN frame type.
@@ -210,7 +210,7 @@ fn main() -> Result<()> {
     println!("\nSimulated {} CAN frames", frames.len());
 
     // Create logger
-    let mut logger = DbcMdfLogger::new(&dbc)?;
+    let mut logger = CanDbcLogger::new(&dbc)?;
 
     // Log all frames
     for tsf in &frames {

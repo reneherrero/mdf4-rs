@@ -33,7 +33,9 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::fd::{FdFlags, FdFrame, MAX_FD_DATA_LEN};
+#[cfg(feature = "can")]
+use super::fd::FdFrame;
+use super::fd::{FdFlags, MAX_FD_DATA_LEN};
 
 /// A buffered raw CAN frame.
 #[derive(Clone)]
@@ -118,7 +120,8 @@ impl RawCanLogger<crate::writer::VecWriter> {
 
     /// Create a new raw CAN logger with pre-allocated capacity.
     pub fn with_capacity(capacity: usize) -> crate::Result<Self> {
-        let writer = crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(capacity));
+        let writer =
+            crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(capacity));
         Ok(Self {
             writer,
             channel_groups: BTreeMap::new(),
@@ -190,14 +193,17 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
 
     /// Internal log method for classic CAN frames.
     #[inline]
-    fn log_internal(&mut self, can_id: u32, timestamp_us: u64, data: &[u8], is_extended: bool) -> bool {
+    fn log_internal(
+        &mut self,
+        can_id: u32,
+        timestamp_us: u64,
+        data: &[u8],
+        is_extended: bool,
+    ) -> bool {
         let dlc = data.len().min(8) as u8;
         let frame = RawFrame::new_classic(timestamp_us, dlc, data, is_extended);
 
-        self.buffers
-            .entry(can_id)
-            .or_insert_with(Vec::new)
-            .push(frame);
+        self.buffers.entry(can_id).or_default().push(frame);
         true
     }
 
@@ -227,7 +233,13 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
     /// # Returns
     /// Always returns `true` (raw logging never rejects frames)
     #[inline]
-    pub fn log_fd_extended(&mut self, can_id: u32, timestamp_us: u64, data: &[u8], flags: FdFlags) -> bool {
+    pub fn log_fd_extended(
+        &mut self,
+        can_id: u32,
+        timestamp_us: u64,
+        data: &[u8],
+        flags: FdFlags,
+    ) -> bool {
         // Store extended IDs with bit 31 set for unique channel group
         let extended_id = can_id | 0x8000_0000;
         self.log_fd_internal(extended_id, timestamp_us, data, flags, true)
@@ -235,7 +247,14 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
 
     /// Internal log method for CAN FD frames.
     #[inline]
-    fn log_fd_internal(&mut self, can_id: u32, timestamp_us: u64, data: &[u8], flags: FdFlags, is_extended: bool) -> bool {
+    fn log_fd_internal(
+        &mut self,
+        can_id: u32,
+        timestamp_us: u64,
+        data: &[u8],
+        flags: FdFlags,
+        is_extended: bool,
+    ) -> bool {
         let dlc = super::fd::len_to_dlc(data.len());
         let frame = RawFrame::new_fd(timestamp_us, dlc, data, flags, is_extended);
 
@@ -244,10 +263,7 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
             self.max_data_len = data.len().min(MAX_FD_DATA_LEN);
         }
 
-        self.buffers
-            .entry(can_id)
-            .or_insert_with(Vec::new)
-            .push(frame);
+        self.buffers.entry(can_id).or_default().push(frame);
         true
     }
 
@@ -275,9 +291,12 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
     pub fn log_fd_frame<F: FdFrame>(&mut self, timestamp_us: u64, frame: &F) -> bool {
         if frame.is_fd() {
             match frame.id() {
-                embedded_can::Id::Standard(id) => {
-                    self.log_fd(id.as_raw() as u32, timestamp_us, frame.data(), frame.fd_flags())
-                }
+                embedded_can::Id::Standard(id) => self.log_fd(
+                    id.as_raw() as u32,
+                    timestamp_us,
+                    frame.data(),
+                    frame.fd_flags(),
+                ),
                 embedded_can::Id::Extended(id) => {
                     self.log_fd_extended(id.as_raw(), timestamp_us, frame.data(), frame.fd_flags())
                 }
@@ -473,7 +492,9 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
             values.push(DecodedValue::UnsignedInteger(frame.timestamp_us));
             values.push(DecodedValue::UnsignedInteger(can_id as u64));
             values.push(DecodedValue::UnsignedInteger(frame.dlc as u64));
-            values.push(DecodedValue::UnsignedInteger(frame.fd_flags.to_byte() as u64));
+            values.push(DecodedValue::UnsignedInteger(
+                frame.fd_flags.to_byte() as u64
+            ));
             values.push(DecodedValue::UnsignedInteger(frame.is_extended as u64));
 
             // Add data bytes (pad with zeros if needed)
@@ -542,12 +563,18 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
 
     /// Get count of standard 11-bit ID frames.
     pub fn standard_id_count(&self) -> usize {
-        self.buffers.keys().filter(|id| *id & 0x8000_0000 == 0).count()
+        self.buffers
+            .keys()
+            .filter(|id| *id & 0x8000_0000 == 0)
+            .count()
     }
 
     /// Get count of extended 29-bit ID frames.
     pub fn extended_id_count(&self) -> usize {
-        self.buffers.keys().filter(|id| *id & 0x8000_0000 != 0).count()
+        self.buffers
+            .keys()
+            .filter(|id| *id & 0x8000_0000 != 0)
+            .count()
     }
 }
 
@@ -580,7 +607,11 @@ mod tests {
 
         // Log extended ID (29-bit) using new log_extended method
         let extended_id = 0x1234_5678;
-        assert!(logger.log_extended(extended_id, 1000, &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]));
+        assert!(logger.log_extended(
+            extended_id,
+            1000,
+            &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
+        ));
 
         // Frame is stored with bit 31 set
         let stored_id = extended_id | 0x8000_0000;

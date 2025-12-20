@@ -40,7 +40,7 @@ fn collect_groups(file: &MdfFile) -> Result<Vec<MergedGroup>> {
                 let name = read_string_block(mmap, ch.block.name_addr)?;
                 metas.push(ChannelMeta {
                     name,
-                    data_type: ch.block.data_type.clone(),
+                    data_type: ch.block.data_type,
                     bit_offset: ch.block.bit_offset,
                     byte_offset: ch.block.byte_offset,
                     bit_count: ch.block.bit_count,
@@ -108,7 +108,7 @@ pub fn merge_files(output: &str, first: &str, second: &str) -> Result<()> {
         for ch in &group.meta.channels {
             let id = writer.add_channel(&cg_id, last_cn.as_deref(), |cn| {
                 cn.channel_type = ch.channel_type;
-                cn.data_type = ch.data_type.clone();
+                cn.data_type = ch.data_type;
                 cn.bit_offset = ch.bit_offset;
                 cn.byte_offset = ch.byte_offset;
                 cn.bit_count = ch.bit_count;

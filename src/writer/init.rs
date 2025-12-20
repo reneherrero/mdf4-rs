@@ -8,7 +8,7 @@ use crate::{
     Result,
     blocks::{
         BlockHeader, ChannelBlock, ChannelGroupBlock, DataGroupBlock, HeaderBlock,
-        IdentificationBlock, TextBlock, SourceBlock, {ConversionBlock, ConversionType},
+        IdentificationBlock, SourceBlock, TextBlock, {ConversionBlock, ConversionType},
     },
 };
 
@@ -259,9 +259,9 @@ impl<W: MdfWrite> MdfWriter<W> {
             return Ok(());
         }
 
-        let cn_pos = self
-            .get_block_position(cn_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+        let cn_pos = self.get_block_position(cn_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id))
+        })?;
 
         let tx_id = format!("tx_unit_{}", cn_id);
         let tx_block = TextBlock::new(unit);
@@ -288,9 +288,9 @@ impl<W: MdfWrite> MdfWriter<W> {
             return Ok(());
         }
 
-        let cn_pos = self
-            .get_block_position(cn_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+        let cn_pos = self.get_block_position(cn_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id))
+        })?;
 
         let tx_id = format!("tx_comment_{}", cn_id);
         let tx_block = TextBlock::new(comment);
@@ -328,15 +328,19 @@ impl<W: MdfWrite> MdfWriter<W> {
     /// let conv = ConversionBlock::linear(-40.0, 0.1);
     /// writer.set_channel_conversion(&ch, &conv)?;
     /// ```
-    pub fn set_channel_conversion(&mut self, cn_id: &str, conversion: &ConversionBlock) -> Result<()> {
+    pub fn set_channel_conversion(
+        &mut self,
+        cn_id: &str,
+        conversion: &ConversionBlock,
+    ) -> Result<()> {
         // Skip identity conversions (they're redundant)
         if conversion.is_identity() {
             return Ok(());
         }
 
-        let cn_pos = self
-            .get_block_position(cn_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+        let cn_pos = self.get_block_position(cn_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id))
+        })?;
 
         let cc_count = self
             .block_positions
@@ -364,9 +368,9 @@ impl<W: MdfWrite> MdfWriter<W> {
     /// * `min` - Minimum physical value
     /// * `max` - Maximum physical value
     pub fn set_channel_limits(&mut self, cn_id: &str, min: f64, max: f64) -> Result<()> {
-        let cn_pos = self
-            .get_block_position(cn_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id)))?;
+        let cn_pos = self.get_block_position(cn_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel '{}' not found", cn_id))
+        })?;
 
         // lower_limit is at offset 128, upper_limit at 136
         const LOWER_LIMIT_OFFSET: u64 = 128;
@@ -431,9 +435,9 @@ impl<W: MdfWrite> MdfWriter<W> {
             return Ok(());
         }
 
-        let cg_pos = self
-            .get_block_position(cg_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+        let cg_pos = self.get_block_position(cg_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id))
+        })?;
 
         let tx_id = format!("tx_cgname_{}", cg_id);
         let tx_block = TextBlock::new(name);
@@ -460,9 +464,9 @@ impl<W: MdfWrite> MdfWriter<W> {
             return Ok(());
         }
 
-        let cg_pos = self
-            .get_block_position(cg_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+        let cg_pos = self.get_block_position(cg_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id))
+        })?;
 
         let tx_id = format!("tx_cgcomment_{}", cg_id);
         let tx_block = TextBlock::new(comment);
@@ -500,9 +504,9 @@ impl<W: MdfWrite> MdfWriter<W> {
         source: &SourceBlock,
         source_name: Option<&str>,
     ) -> Result<()> {
-        let cg_pos = self
-            .get_block_position(cg_id)
-            .ok_or_else(|| crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id)))?;
+        let cg_pos = self.get_block_position(cg_id).ok_or_else(|| {
+            crate::Error::BlockLinkError(format!("Channel group '{}' not found", cg_id))
+        })?;
 
         let si_count = self
             .block_positions

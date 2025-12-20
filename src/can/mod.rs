@@ -3,7 +3,7 @@
 //! This module provides utilities for logging and reading CAN bus data with MDF4 files.
 //! It supports multiple modes:
 //!
-//! 1. **With DBC**: Use [`DbcMdfLogger`] for full signal decoding with metadata
+//! 1. **With DBC**: Use [`CanDbcLogger`] for full signal decoding with metadata
 //! 2. **Without DBC**: Use [`RawCanLogger`] for raw frame capture
 //! 3. **Post-processing**: Use [`DbcOverlayReader`] to decode raw captures with DBC
 //!
@@ -21,13 +21,13 @@
 //! # Example with DBC
 //!
 //! ```ignore
-//! use mdf4_rs::can::DbcMdfLogger;
+//! use mdf4_rs::can::CanDbcLogger;
 //!
 //! // Parse DBC file
 //! let dbc = dbc_rs::Dbc::parse(dbc_content)?;
 //!
 //! // Create logger with full metadata
-//! let mut logger = DbcMdfLogger::builder(&dbc)
+//! let mut logger = CanDbcLogger::builder(&dbc)
 //!     .store_raw_values(true)
 //!     .build()?;
 //!
@@ -62,14 +62,17 @@ mod raw_logger;
 mod timestamped_frame;
 
 pub use dbc_compat::{
-    extract_message_info, signal_to_bit_count, signal_to_conversion,
+    MessageInfo, SignalInfo, extract_message_info, signal_to_bit_count, signal_to_conversion,
     signal_to_conversion_with_range, signal_to_data_type, value_descriptions_to_mapping,
-    MessageInfo, SignalInfo,
 };
-pub use dbc_logger::{DbcMdfLogger, DbcMdfLoggerBuilder, DbcMdfLoggerConfig};
+pub use dbc_logger::{CanDbcLogger, CanDbcLoggerBuilder, CanDbcLoggerConfig};
 #[cfg(feature = "std")]
 pub use dbc_overlay::{DbcOverlayReader, DecodedFrame, OverlayStatistics, SignalValue};
-pub use fd::{dlc_to_len, len_to_dlc, FdFlags, FdFrame, SimpleFdFrame, MAX_FD_DATA_LEN};
+// FD constants and flags are always available
+pub use fd::{FdFlags, MAX_FD_DATA_LEN, dlc_to_len, len_to_dlc};
+// FD frame trait and implementation require embedded_can
+#[cfg(feature = "can")]
+pub use fd::{FdFrame, SimpleFdFrame};
 pub use raw_logger::RawCanLogger;
 pub use timestamped_frame::TimestampedFrame;
 

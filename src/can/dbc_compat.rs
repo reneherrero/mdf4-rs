@@ -29,8 +29,8 @@
 //! }
 //! ```
 
-use crate::blocks::ConversionBlock;
 use crate::DataType;
+use crate::blocks::ConversionBlock;
 
 /// Determines the appropriate MDF4 DataType for a DBC signal.
 ///
@@ -235,7 +235,13 @@ impl SignalInfo {
     /// Convert a physical value to raw integer value.
     #[inline]
     pub fn physical_to_raw(&self, physical: f64) -> i64 {
-        ((physical - self.offset) / self.factor).round() as i64
+        let raw = (physical - self.offset) / self.factor;
+        // Round to nearest integer (no_std compatible)
+        if raw >= 0.0 {
+            (raw + 0.5) as i64
+        } else {
+            (raw - 0.5) as i64
+        }
     }
 }
 
@@ -289,7 +295,7 @@ impl MessageInfo {
 pub fn extract_message_info(dbc: &dbc_rs::Dbc) -> alloc::vec::Vec<MessageInfo> {
     dbc.messages()
         .iter()
-        .filter(|m| !m.signals().iter().next().is_none()) // Only messages with signals
+        .filter(|m| m.signals().iter().next().is_some()) // Only messages with signals
         .map(MessageInfo::from_message)
         .collect()
 }
@@ -312,9 +318,7 @@ pub fn value_descriptions_to_mapping<'a>(
     descriptions: impl Iterator<Item = (i64, &'a str)>,
     default_text: &str,
 ) -> (Vec<(i64, String)>, String) {
-    let mapping: Vec<(i64, String)> = descriptions
-        .map(|(v, t)| (v, String::from(t)))
-        .collect();
+    let mapping: Vec<(i64, String)> = descriptions.map(|(v, t)| (v, String::from(t))).collect();
     (mapping, String::from(default_text))
 }
 

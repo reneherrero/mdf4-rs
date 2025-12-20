@@ -39,10 +39,11 @@
 ///
 /// The file remains in a valid state after each flush, with proper DT block
 /// sizes recorded. Final DL (Data List) blocks are created during finalization.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum FlushPolicy {
     /// Never auto-flush. Data is only flushed on explicit `flush()` or `finalize()` calls.
     /// This is the default behavior.
+    #[default]
     Manual,
 
     /// Flush after every N records written across all channel groups.
@@ -68,12 +69,6 @@ pub enum FlushPolicy {
     /// FlushPolicy::EveryNBytes(1024 * 1024)
     /// ```
     EveryNBytes(u64),
-}
-
-impl Default for FlushPolicy {
-    fn default() -> Self {
-        FlushPolicy::Manual
-    }
 }
 
 impl FlushPolicy {

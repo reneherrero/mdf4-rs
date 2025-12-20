@@ -532,9 +532,7 @@ impl ConversionBlock {
         match self.cc_type {
             ConversionType::Identity => true,
             ConversionType::Linear => {
-                self.cc_val.len() >= 2
-                    && self.cc_val[0] == 0.0
-                    && self.cc_val[1] == 1.0
+                self.cc_val.len() >= 2 && self.cc_val[0] == 0.0 && self.cc_val[1] == 1.0
             }
             _ => false,
         }

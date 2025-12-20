@@ -331,7 +331,7 @@ impl MdfIndex {
                 let indexed_channel = IndexedChannel {
                     name: channel.name()?,
                     unit: channel.unit()?,
-                    data_type: block.data_type.clone(),
+                    data_type: block.data_type,
                     byte_offset: block.byte_offset,
                     bit_offset: block.bit_offset,
                     bit_count: block.bit_count,
@@ -833,7 +833,7 @@ impl MdfIndex {
                     comment_addr: 0,
                     channel_type: channel.channel_type,
                     sync_type: 0,
-                    data_type: channel.data_type.clone(),
+                    data_type: channel.data_type,
                     bit_offset: channel.bit_offset,
                     byte_offset: channel.byte_offset,
                     bit_count: channel.bit_count,

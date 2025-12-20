@@ -15,6 +15,9 @@ pub struct TimestampedFrame<F> {
 impl<F> TimestampedFrame<F> {
     /// Create a new timestamped frame.
     pub fn new(timestamp_us: u64, frame: F) -> Self {
-        Self { timestamp_us, frame }
+        Self {
+            timestamp_us,
+            frame,
+        }
     }
 }

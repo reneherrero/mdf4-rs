@@ -1,6 +1,6 @@
 //! High-level DBC + MDF Logger with full metadata support.
 //!
-//! This module provides [`DbcMdfLogger`], a high-performance logger that combines
+//! This module provides [`CanDbcLogger`], a high-performance logger that combines
 //! DBC signal definitions with MDF4 file writing. It supports:
 //!
 //! - Full metadata preservation (units, conversions, limits)
@@ -45,9 +45,9 @@ use crate::writer::FlushPolicy;
 /// For multiplexed messages: (can_id, Some(mux_value))
 type BufferKey = (u32, Option<u64>);
 
-/// Configuration for DbcMdfLogger.
+/// Configuration for CanDbcLogger.
 #[derive(Debug, Clone)]
-pub struct DbcMdfLoggerConfig {
+pub struct CanDbcLoggerConfig {
     /// Store raw values with conversion blocks instead of physical values.
     /// Default: false (store physical values as f64)
     pub store_raw_values: bool,
@@ -70,7 +70,7 @@ pub struct DbcMdfLoggerConfig {
     pub include_value_descriptions: bool,
 }
 
-impl Default for DbcMdfLoggerConfig {
+impl Default for CanDbcLoggerConfig {
     fn default() -> Self {
         Self {
             store_raw_values: false,
@@ -82,20 +82,20 @@ impl Default for DbcMdfLoggerConfig {
     }
 }
 
-/// Builder for DbcMdfLogger configuration.
-pub struct DbcMdfLoggerBuilder<'dbc> {
+/// Builder for CanDbcLogger configuration.
+pub struct CanDbcLoggerBuilder<'dbc> {
     dbc: &'dbc dbc_rs::Dbc,
-    config: DbcMdfLoggerConfig,
+    config: CanDbcLoggerConfig,
     capacity: Option<usize>,
     flush_policy: Option<FlushPolicy>,
 }
 
-impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
+impl<'dbc> CanDbcLoggerBuilder<'dbc> {
     /// Create a new builder with default configuration.
     pub fn new(dbc: &'dbc dbc_rs::Dbc) -> Self {
         Self {
             dbc,
-            config: DbcMdfLoggerConfig::default(),
+            config: CanDbcLoggerConfig::default(),
             capacity: None,
             flush_policy: None,
         }
@@ -166,10 +166,10 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
     /// # Example
     ///
     /// ```ignore
-    /// use mdf4_rs::can::DbcMdfLogger;
+    /// use mdf4_rs::can::CanDbcLogger;
     /// use mdf4_rs::FlushPolicy;
     ///
-    /// let mut logger = DbcMdfLogger::builder(&dbc)
+    /// let mut logger = CanDbcLogger::builder(&dbc)
     ///     .with_flush_policy(FlushPolicy::EveryNRecords(1000))
     ///     .build_file("output.mf4")?;
     /// ```
@@ -179,20 +179,25 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
     }
 
     /// Build the logger with in-memory output.
-    pub fn build(self) -> crate::Result<DbcMdfLogger<'dbc, crate::writer::VecWriter>> {
+    pub fn build(self) -> crate::Result<CanDbcLogger<'dbc, crate::writer::VecWriter>> {
         let mut writer = match self.capacity {
-            Some(cap) => crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(cap)),
+            Some(cap) => {
+                crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(cap))
+            }
             None => crate::MdfWriter::from_writer(crate::writer::VecWriter::new()),
         };
         if let Some(policy) = self.flush_policy {
             writer.set_flush_policy(policy);
         }
-        Ok(DbcMdfLogger::with_config(self.dbc, writer, self.config))
+        Ok(CanDbcLogger::with_config(self.dbc, writer, self.config))
     }
 
     /// Build the logger with file output.
     #[cfg(feature = "std")]
-    pub fn build_file(self, path: &str) -> crate::Result<DbcMdfLogger<'dbc, crate::writer::FileWriter>> {
+    pub fn build_file(
+        self,
+        path: &str,
+    ) -> crate::Result<CanDbcLogger<'dbc, crate::writer::FileWriter>> {
         let mut writer = match self.capacity {
             Some(cap) => crate::MdfWriter::new_with_capacity(path, cap)?,
             None => crate::MdfWriter::new(path)?,
@@ -200,7 +205,7 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
         if let Some(policy) = self.flush_policy {
             writer.set_flush_policy(policy);
         }
-        Ok(DbcMdfLogger::with_config(self.dbc, writer, self.config))
+        Ok(CanDbcLogger::with_config(self.dbc, writer, self.config))
     }
 }
 
@@ -294,15 +299,15 @@ struct MultiplexInfo {
 /// # Example
 ///
 /// ```ignore
-/// use mdf4_rs::can::DbcMdfLogger;
+/// use mdf4_rs::can::CanDbcLogger;
 ///
 /// let dbc = dbc_rs::Dbc::parse(dbc_content)?;
 ///
 /// // Simple usage (stores physical values)
-/// let mut logger = DbcMdfLogger::new(&dbc)?;
+/// let mut logger = CanDbcLogger::new(&dbc)?;
 ///
 /// // Or with builder for raw value storage
-/// let mut logger = DbcMdfLogger::builder(&dbc)
+/// let mut logger = CanDbcLogger::builder(&dbc)
 ///     .store_raw_values(true)
 ///     .build()?;
 ///
@@ -312,9 +317,9 @@ struct MultiplexInfo {
 /// // Get MDF bytes
 /// let mdf_bytes = logger.finalize()?;
 /// ```
-pub struct DbcMdfLogger<'dbc, W: crate::writer::MdfWrite> {
+pub struct CanDbcLogger<'dbc, W: crate::writer::MdfWrite> {
     dbc: &'dbc dbc_rs::Dbc,
-    config: DbcMdfLoggerConfig,
+    config: CanDbcLoggerConfig,
     /// Buffers keyed by (can_id, Option<mux_value>)
     buffers: BTreeMap<BufferKey, MessageBuffer>,
     writer: crate::MdfWriter<W>,
@@ -327,26 +332,34 @@ pub struct DbcMdfLogger<'dbc, W: crate::writer::MdfWrite> {
     initialized: bool,
 }
 
-impl<'dbc> DbcMdfLogger<'dbc, crate::writer::VecWriter> {
+impl<'dbc> CanDbcLogger<'dbc, crate::writer::VecWriter> {
     /// Create a new DBC MDF logger with in-memory output.
     ///
     /// Uses signal definitions from the provided DBC file.
     /// Stores physical values by default; use `builder()` for raw value mode.
     pub fn new(dbc: &'dbc dbc_rs::Dbc) -> crate::Result<Self> {
         let writer = crate::MdfWriter::from_writer(crate::writer::VecWriter::new());
-        Ok(Self::with_config(dbc, writer, DbcMdfLoggerConfig::default()))
+        Ok(Self::with_config(
+            dbc,
+            writer,
+            CanDbcLoggerConfig::default(),
+        ))
     }
 
     /// Create a new DBC MDF logger with pre-allocated capacity.
     pub fn with_capacity(dbc: &'dbc dbc_rs::Dbc, capacity: usize) -> crate::Result<Self> {
         let writer =
             crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(capacity));
-        Ok(Self::with_config(dbc, writer, DbcMdfLoggerConfig::default()))
+        Ok(Self::with_config(
+            dbc,
+            writer,
+            CanDbcLoggerConfig::default(),
+        ))
     }
 
     /// Create a builder for configuring the logger.
-    pub fn builder(dbc: &'dbc dbc_rs::Dbc) -> DbcMdfLoggerBuilder<'dbc> {
-        DbcMdfLoggerBuilder::new(dbc)
+    pub fn builder(dbc: &'dbc dbc_rs::Dbc) -> CanDbcLoggerBuilder<'dbc> {
+        CanDbcLoggerBuilder::new(dbc)
     }
 
     /// Finalize the MDF file and return the bytes.
@@ -357,16 +370,20 @@ impl<'dbc> DbcMdfLogger<'dbc, crate::writer::VecWriter> {
 }
 
 #[cfg(feature = "std")]
-impl<'dbc> DbcMdfLogger<'dbc, crate::writer::FileWriter> {
+impl<'dbc> CanDbcLogger<'dbc, crate::writer::FileWriter> {
     /// Create a new DBC MDF logger that writes to a file.
     pub fn new_file(dbc: &'dbc dbc_rs::Dbc, path: &str) -> crate::Result<Self> {
         let writer = crate::MdfWriter::new(path)?;
-        Ok(Self::with_config(dbc, writer, DbcMdfLoggerConfig::default()))
+        Ok(Self::with_config(
+            dbc,
+            writer,
+            CanDbcLoggerConfig::default(),
+        ))
     }
 
     /// Create a builder for configuring the logger with file output.
-    pub fn builder_file(dbc: &'dbc dbc_rs::Dbc) -> DbcMdfLoggerBuilder<'dbc> {
-        DbcMdfLoggerBuilder::new(dbc)
+    pub fn builder_file(dbc: &'dbc dbc_rs::Dbc) -> CanDbcLoggerBuilder<'dbc> {
+        CanDbcLoggerBuilder::new(dbc)
     }
 
     /// Finalize and close the MDF file.
@@ -375,9 +392,13 @@ impl<'dbc> DbcMdfLogger<'dbc, crate::writer::FileWriter> {
     }
 }
 
-impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
+impl<'dbc, W: crate::writer::MdfWrite> CanDbcLogger<'dbc, W> {
     /// Create a logger with custom configuration.
-    fn with_config(dbc: &'dbc dbc_rs::Dbc, writer: crate::MdfWriter<W>, config: DbcMdfLoggerConfig) -> Self {
+    fn with_config(
+        dbc: &'dbc dbc_rs::Dbc,
+        writer: crate::MdfWriter<W>,
+        config: CanDbcLoggerConfig,
+    ) -> Self {
         let mut buffers = BTreeMap::new();
         let mut mux_info = BTreeMap::new();
 
@@ -401,10 +422,13 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             if let Some(switch) = switch_name {
                 if !mux_values.is_empty() {
                     // This is a multiplexed message - create separate buffers per mux value
-                    mux_info.insert(can_id, MultiplexInfo {
-                        switch_name: switch.clone(),
-                        mux_values: mux_values.clone(),
-                    });
+                    mux_info.insert(
+                        can_id,
+                        MultiplexInfo {
+                            switch_name: switch.clone(),
+                            mux_values: mux_values.clone(),
+                        },
+                    );
 
                     for mux_val in &mux_values {
                         // Collect signals for this mux value:
@@ -425,7 +449,8 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
                         }
 
                         if !mux_signals.is_empty() {
-                            buffers.insert((can_id, Some(*mux_val)), MessageBuffer::new(mux_signals));
+                            buffers
+                                .insert((can_id, Some(*mux_val)), MessageBuffer::new(mux_signals));
                         }
                     }
                     continue;
@@ -433,10 +458,8 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             }
 
             // Non-multiplexed message - single buffer
-            let all_signals: Vec<SignalInfo> = signals
-                .iter()
-                .map(SignalInfo::from_signal)
-                .collect();
+            let all_signals: Vec<SignalInfo> =
+                signals.iter().map(SignalInfo::from_signal).collect();
             if !all_signals.is_empty() {
                 buffers.insert((can_id, None), MessageBuffer::new(all_signals));
             }
@@ -455,7 +478,7 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
     }
 
     /// Get the current configuration.
-    pub fn config(&self) -> &DbcMdfLoggerConfig {
+    pub fn config(&self) -> &CanDbcLoggerConfig {
         &self.config
     }
 
@@ -501,10 +524,20 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
 
     /// Internal logging implementation.
     #[inline]
-    fn log_internal(&mut self, can_id: u32, timestamp_us: u64, data: &[u8], is_extended: bool) -> bool {
+    fn log_internal(
+        &mut self,
+        can_id: u32,
+        timestamp_us: u64,
+        data: &[u8],
+        is_extended: bool,
+    ) -> bool {
         // Use Dbc::decode() directly
         if let Ok(decoded) = self.dbc.decode(can_id, data, is_extended) {
-            let dbc_id = if is_extended { can_id | 0x8000_0000 } else { can_id };
+            let dbc_id = if is_extended {
+                can_id | 0x8000_0000
+            } else {
+                can_id
+            };
 
             // Determine the buffer key based on whether this is a multiplexed message
             let buffer_key = if let Some(mux) = self.mux_info.get(&dbc_id) {
@@ -691,18 +724,21 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
                 if self.config.store_raw_values {
                     // Check for value descriptions first (they take precedence)
                     let has_value_desc = self.config.include_value_descriptions
-                        && self.dbc.value_descriptions_for_signal(can_id, &info.name).is_some();
+                        && self
+                            .dbc
+                            .value_descriptions_for_signal(can_id, &info.name)
+                            .is_some();
 
                     if has_value_desc {
                         // Add ValueToText conversion from DBC value descriptions
-                        if let Some(vd) = self.dbc.value_descriptions_for_signal(can_id, &info.name) {
-                            let mapping: Vec<(i64, &str)> = vd.iter()
-                                .map(|(v, desc)| (v as i64, desc))
-                                .collect();
+                        if let Some(vd) = self.dbc.value_descriptions_for_signal(can_id, &info.name)
+                        {
+                            let mapping: Vec<(i64, &str)> =
+                                vd.iter().map(|(v, desc)| (v as i64, desc)).collect();
                             if !mapping.is_empty() {
                                 self.writer.add_value_to_text_conversion(
                                     &mapping,
-                                    "",  // default text for unknown values
+                                    "", // default text for unknown values
                                     Some(&ch),
                                 )?;
                             }
@@ -720,10 +756,13 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
             }
 
             self.channel_groups.insert(buffer_key, cg);
-            self.channel_ids.insert(buffer_key, ChannelIds {
-                time_channel: time_ch,
-                signal_channels,
-            });
+            self.channel_ids.insert(
+                buffer_key,
+                ChannelIds {
+                    time_channel: time_ch,
+                    signal_channels,
+                },
+            );
         }
 
         self.initialized = true;
@@ -841,7 +880,9 @@ impl<'dbc, W: crate::writer::MdfWrite> DbcMdfLogger<'dbc, W> {
     ///
     /// Returns `None` if the message is not multiplexed.
     pub fn mux_values(&self, can_id: u32) -> Option<impl Iterator<Item = u64> + '_> {
-        self.mux_info.get(&can_id).map(|info| info.mux_values.iter().copied())
+        self.mux_info
+            .get(&can_id)
+            .map(|info| info.mux_values.iter().copied())
     }
 }
 
@@ -862,7 +903,7 @@ BO_ 256 Engine : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // Log some frames (RPM = 2000, raw = 8000 = 0x1F40)
         let data = [0x40, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -893,7 +934,7 @@ BO_ 256 Engine : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::builder(&dbc)
+        let mut logger = CanDbcLogger::builder(&dbc)
             .store_raw_values(true)
             .build()
             .unwrap();
@@ -923,7 +964,7 @@ BO_ 256 Engine : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // RPM = 2000 (raw 8000), Temp = 50°C (raw 90)
         let data = [0x40, 0x1F, 0x5A, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -948,7 +989,7 @@ BO_ 256 Engine : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // Try to log unknown message ID
         let data = [0x00; 8];
@@ -968,7 +1009,7 @@ BO_ 100 TestMsg: 8 Vector__XXX
         )
         .unwrap();
 
-        let logger = DbcMdfLogger::builder(&dbc)
+        let logger = CanDbcLogger::builder(&dbc)
             .store_raw_values(true)
             .include_units(true)
             .include_limits(true)
@@ -1006,7 +1047,7 @@ VAL_ 256 GearPosition 0 "Park" 1 "Reverse" 2 "Neutral" 3 "Drive" 4 "Sport" ;
         assert_eq!(vd.get(3), Some("Drive"));
 
         // Create logger with raw values and value descriptions
-        let mut logger = DbcMdfLogger::builder(&dbc)
+        let mut logger = CanDbcLogger::builder(&dbc)
             .store_raw_values(true)
             .include_value_descriptions(true)
             .build()
@@ -1043,7 +1084,7 @@ BO_ 512 Transmission : 8 TCM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // Log some data
         assert!(logger.log(256, 1000, &[0x00, 0x10, 0, 0, 0, 0, 0, 0]));
@@ -1075,7 +1116,7 @@ BO_ 256 DiagResponse : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // Verify multiplexed message detection
         assert!(logger.is_multiplexed(256));
@@ -1147,7 +1188,7 @@ BO_ 256 Engine : 8 ECM
         )
         .unwrap();
 
-        let mut logger = DbcMdfLogger::new(&dbc).unwrap();
+        let mut logger = CanDbcLogger::new(&dbc).unwrap();
 
         // Should not be multiplexed
         assert!(!logger.is_multiplexed(256));
@@ -1195,7 +1236,7 @@ BO_ 256 Engine : 8 ECM
         .unwrap();
 
         // Create logger with flush policy
-        let mut logger = DbcMdfLogger::builder(&dbc)
+        let mut logger = CanDbcLogger::builder(&dbc)
             .with_flush_policy(FlushPolicy::EveryNRecords(10))
             .build()
             .unwrap();
@@ -1232,7 +1273,7 @@ BO_ 256 Engine : 8 ECM
         .unwrap();
 
         // Create logger with byte-based flush policy
-        let mut logger = DbcMdfLogger::builder(&dbc)
+        let mut logger = CanDbcLogger::builder(&dbc)
             .with_flush_policy(FlushPolicy::EveryNBytes(1024))
             .build()
             .unwrap();

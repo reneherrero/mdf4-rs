@@ -251,7 +251,7 @@ fn decode_value_internal(
             Err(_) => Some(DecodedValue::String(String::from("<Invalid UTF8>"))),
         },
         DataType::StringUtf16LE => {
-            if !slice.len().is_multiple_of(2) {
+            if slice.len() % 2 != 0 {
                 return None;
             }
             let u16_data: Vec<u16> = slice
@@ -264,7 +264,7 @@ fn decode_value_internal(
             }
         }
         DataType::StringUtf16BE => {
-            if !slice.len().is_multiple_of(2) {
+            if slice.len() % 2 != 0 {
                 return None;
             }
             let u16_data: Vec<u16> = slice

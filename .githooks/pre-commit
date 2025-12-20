@@ -1,0 +1,123 @@
+#!/bin/bash
+# Pre-commit hook to run quality checks before allowing commits
+#
+# This hook ensures that code quality checks pass before commits are made.
+# It runs tests, clippy, and formatting checks on all feature combinations.
+#
+# To install: git config core.hooksPath .githooks
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${YELLOW}Running pre-commit checks...${NC}"
+
+# Check if cargo is available
+if ! command -v cargo &> /dev/null; then
+    echo -e "${RED}Error: cargo not found. Please install Rust toolchain.${NC}"
+    exit 1
+fi
+
+# Get the repository root
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Ensure latest stable clippy is available (for better linting)
+echo -e "${YELLOW}Ensuring latest stable clippy is available...${NC}"
+if ! rustup run stable cargo clippy --version &> /dev/null; then
+    echo -e "${YELLOW}Installing latest stable toolchain with clippy...${NC}"
+    rustup toolchain install stable --component clippy || {
+        echo -e "${RED}Error: Failed to install stable toolchain with clippy.${NC}"
+        exit 1
+    }
+fi
+
+# Track if any checks failed
+FAILED=0
+
+# Run tests with all features (std + can + dbc)
+echo -e "\n${YELLOW}Running tests with all features...${NC}"
+if cargo test --quiet --all-features 2>&1; then
+    echo -e "${GREEN}✓ Tests passed (all features)${NC}"
+else
+    echo -e "${RED}✗ Tests failed (all features)${NC}"
+    FAILED=1
+fi
+
+# Check alloc-only compilation (no_std compatible)
+echo -e "\n${YELLOW}Checking alloc-only compilation (no_std)...${NC}"
+if cargo check --quiet --no-default-features --features alloc 2>&1; then
+    echo -e "${GREEN}✓ Compilation check passed (alloc)${NC}"
+else
+    echo -e "${RED}✗ Compilation check failed (alloc)${NC}"
+    FAILED=1
+fi
+
+# Check alloc+can compilation
+echo -e "\n${YELLOW}Checking alloc+can compilation...${NC}"
+if cargo check --quiet --no-default-features --features "alloc,can" 2>&1; then
+    echo -e "${GREEN}✓ Compilation check passed (alloc+can)${NC}"
+else
+    echo -e "${RED}✗ Compilation check failed (alloc+can)${NC}"
+    FAILED=1
+fi
+
+# Check alloc+dbc compilation
+echo -e "\n${YELLOW}Checking alloc+dbc compilation...${NC}"
+if cargo check --quiet --no-default-features --features "alloc,dbc" 2>&1; then
+    echo -e "${GREEN}✓ Compilation check passed (alloc+dbc)${NC}"
+else
+    echo -e "${RED}✗ Compilation check failed (alloc+dbc)${NC}"
+    FAILED=1
+fi
+
+# Run clippy with all features
+echo -e "\n${YELLOW}Running clippy (all features)...${NC}"
+if rustup run stable cargo clippy --all-features -- -D warnings 2>&1; then
+    echo -e "${GREEN}✓ Clippy check passed (all features)${NC}"
+else
+    echo -e "${RED}✗ Clippy check failed (all features)${NC}"
+    FAILED=1
+fi
+
+# Run clippy with alloc-only (no_std)
+echo -e "\n${YELLOW}Running clippy (alloc only, no_std)...${NC}"
+if rustup run stable cargo clippy --no-default-features --features alloc --lib -- -D warnings 2>&1; then
+    echo -e "${GREEN}✓ Clippy check passed (alloc)${NC}"
+else
+    echo -e "${RED}✗ Clippy check failed (alloc)${NC}"
+    FAILED=1
+fi
+
+# Check formatting
+echo -e "\n${YELLOW}Checking code formatting...${NC}"
+if cargo fmt -- --check 2>&1; then
+    echo -e "${GREEN}✓ Code formatting check passed${NC}"
+else
+    echo -e "${RED}✗ Code formatting check failed${NC}"
+    echo -e "${YELLOW}Run 'cargo fmt' to fix formatting issues${NC}"
+    FAILED=1
+fi
+
+# Check documentation builds without warnings
+echo -e "\n${YELLOW}Checking documentation...${NC}"
+if RUSTDOCFLAGS="-D warnings" cargo doc --quiet --all-features --no-deps 2>&1; then
+    echo -e "${GREEN}✓ Documentation check passed${NC}"
+else
+    echo -e "${RED}✗ Documentation check failed${NC}"
+    FAILED=1
+fi
+
+# Exit with error if any check failed
+if [ $FAILED -eq 1 ]; then
+    echo -e "\n${RED}Pre-commit checks failed. Please fix the issues above before committing.${NC}"
+    echo -e "${YELLOW}To skip this hook, use: git commit --no-verify${NC}"
+    exit 1
+fi
+
+echo -e "\n${GREEN}All pre-commit checks passed!${NC}"
+exit 0

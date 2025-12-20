@@ -1,7 +1,7 @@
 //! End-to-end integration test: Extended CAN ID (29-bit) logging -> MDF4 -> Read
 
-use mdf4_rs::{MDF, Result, DecodedValue};
-use mdf4_rs::can::{RawCanLogger, FdFlags};
+use mdf4_rs::can::{FdFlags, RawCanLogger};
+use mdf4_rs::{DecodedValue, MDF, Result};
 
 /// Test extended CAN ID logging with raw logger
 #[test]
@@ -13,24 +13,43 @@ fn end_to_end_extended_can_ids() -> Result<()> {
     let mut logger = RawCanLogger::new()?;
 
     // Log standard 11-bit IDs
-    logger.log(0x100, 1000, &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+    logger.log(
+        0x100,
+        1000,
+        &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+    );
     logger.log(0x200, 2000, &[0x11, 0x12, 0x13, 0x14]);
     println!("  - Logged 2 standard 11-bit ID frames (0x100, 0x200)");
 
     // Log extended 29-bit IDs (common in J1939)
     // PGN 0xFEF1 = Engine Temperature (typical J1939)
-    logger.log_extended(0x18FEF100, 3000, &[0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28]);
+    logger.log_extended(
+        0x18FEF100,
+        3000,
+        &[0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28],
+    );
     // PGN 0xF004 = Electronic Engine Controller 1
-    logger.log_extended(0x0CF00400, 4000, &[0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38]);
+    logger.log_extended(
+        0x0CF00400,
+        4000,
+        &[0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38],
+    );
     // PGN 0xFECA = DM1 Active Diagnostic Trouble Codes
-    logger.log_extended(0x18FECA00, 5000, &[0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48]);
+    logger.log_extended(
+        0x18FECA00,
+        5000,
+        &[0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48],
+    );
     println!("  - Logged 3 extended 29-bit ID frames (J1939 PGNs)");
 
     assert_eq!(logger.standard_id_count(), 2);
     assert_eq!(logger.extended_id_count(), 3);
     assert!(logger.has_extended_frames());
-    println!("  - Standard IDs: {}, Extended IDs: {}",
-             logger.standard_id_count(), logger.extended_id_count());
+    println!(
+        "  - Standard IDs: {}, Extended IDs: {}",
+        logger.standard_id_count(),
+        logger.extended_id_count()
+    );
 
     let mdf_bytes = logger.finalize()?;
     println!("  - MDF4 file size: {} bytes", mdf_bytes.len());
@@ -42,7 +61,11 @@ fn end_to_end_extended_can_ids() -> Result<()> {
     let mdf = MDF::from_file(temp_path.to_str().unwrap())?;
     let groups = mdf.channel_groups();
 
-    assert_eq!(groups.len(), 5, "Expected 5 channel groups (2 standard + 3 extended)");
+    assert_eq!(
+        groups.len(),
+        5,
+        "Expected 5 channel groups (2 standard + 3 extended)"
+    );
 
     println!("\n{}", "=".repeat(80));
     println!("VERIFYING IDE CHANNEL VALUES");
@@ -86,11 +109,17 @@ fn end_to_end_extended_can_ids() -> Result<()> {
             // The stored CAN_ID has bit 31 set for extended IDs
             let actual_id = can_id & 0x1FFFFFFF;
 
-            println!("  {}: CAN_ID=0x{:08X}, IDE={} ({})",
-                     group_name,
-                     actual_id,
-                     ide,
-                     if is_extended { "extended 29-bit" } else { "standard 11-bit" });
+            println!(
+                "  {}: CAN_ID=0x{:08X}, IDE={} ({})",
+                group_name,
+                actual_id,
+                ide,
+                if is_extended {
+                    "extended 29-bit"
+                } else {
+                    "standard 11-bit"
+                }
+            );
 
             // Verify IDE flag matches the ID type
             if can_id & 0x80000000 != 0 {
@@ -149,12 +178,19 @@ fn end_to_end_extended_can_fd() -> Result<()> {
     // Verify each group has IDE and FD_Flags channels
     for group in groups.iter() {
         let channels = group.channels();
-        let channel_names: Vec<String> = channels.iter()
+        let channel_names: Vec<String> = channels
+            .iter()
             .map(|c| c.name().ok().flatten().unwrap_or_default())
             .collect();
 
-        assert!(channel_names.contains(&"IDE".to_string()), "Missing IDE channel");
-        assert!(channel_names.contains(&"FD_Flags".to_string()), "Missing FD_Flags channel");
+        assert!(
+            channel_names.contains(&"IDE".to_string()),
+            "Missing IDE channel"
+        );
+        assert!(
+            channel_names.contains(&"FD_Flags".to_string()),
+            "Missing FD_Flags channel"
+        );
     }
 
     std::fs::remove_file(&temp_path)?;
@@ -177,19 +213,35 @@ fn end_to_end_j1939_pgns() -> Result<()> {
 
     // Engine Temperature 1 (PGN 65265 = 0xFEF1)
     let engine_temp_id = 0x18FEF100; // Priority 6, PGN 0xFEF1, SA 0x00
-    logger.log_extended(engine_temp_id, 1000, &[0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D]);
+    logger.log_extended(
+        engine_temp_id,
+        1000,
+        &[0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D, 0x7D],
+    );
 
     // Electronic Engine Controller 1 (PGN 61444 = 0xF004)
     let eec1_id = 0x0CF00400; // Priority 3, PGN 0xF004, SA 0x00
-    logger.log_extended(eec1_id, 2000, &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    logger.log_extended(
+        eec1_id,
+        2000,
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    );
 
     // Wheel Speed Information (PGN 65215 = 0xFEBF)
     let wheel_speed_id = 0x18FEBF00;
-    logger.log_extended(wheel_speed_id, 3000, &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+    logger.log_extended(
+        wheel_speed_id,
+        3000,
+        &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+    );
 
     // DM1 Active Diagnostic Trouble Codes (PGN 65226 = 0xFECA)
     let dm1_id = 0x18FECA00;
-    logger.log_extended(dm1_id, 4000, &[0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF]);
+    logger.log_extended(
+        dm1_id,
+        4000,
+        &[0x00, 0xFF, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF],
+    );
 
     println!("  - Logged 4 J1939 messages with extended IDs");
     println!("    - Engine Temperature 1 (PGN 0xFEF1)");

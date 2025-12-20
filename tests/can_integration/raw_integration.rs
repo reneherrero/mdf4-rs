@@ -1,7 +1,7 @@
 //! End-to-end integration test: Raw CAN logging -> MDF4 -> Read and decode with DBC
 
-use mdf4_rs::{MDF, Result, DecodedValue};
 use mdf4_rs::can::RawCanLogger;
+use mdf4_rs::{DecodedValue, MDF, Result};
 
 use super::VEHICLE_DBC;
 
@@ -55,9 +55,15 @@ fn end_to_end_raw_can_to_mdf4_then_decode() -> Result<()> {
 
     println!("  - Logged {} Engine frames (0x100)", engine_frames.len());
     println!("  - Logged {} Vehicle frames (0x200)", vehicle_frames.len());
-    println!("  - Logged {} Transmission frames (0x300)", transmission_frames.len());
-    println!("  - Total: {} frames, {} unique IDs",
-             logger.total_frame_count(), logger.unique_id_count());
+    println!(
+        "  - Logged {} Transmission frames (0x300)",
+        transmission_frames.len()
+    );
+    println!(
+        "  - Total: {} frames, {} unique IDs",
+        logger.total_frame_count(),
+        logger.unique_id_count()
+    );
 
     // Step 3: Finalize and write MDF4 file
     println!("\nStep 3: Finalizing MDF4 file...");
@@ -203,10 +209,12 @@ fn end_to_end_raw_can_to_mdf4_then_decode() -> Result<()> {
                             if let Some(text) = signal.description {
                                 print!("{}={} ", signal.name, text);
                             } else {
-                                print!("{}={:.2}{} ",
+                                print!(
+                                    "{}={:.2}{} ",
                                     signal.name,
                                     signal.value,
-                                    signal.unit.unwrap_or(""));
+                                    signal.unit.unwrap_or("")
+                                );
                             }
                         }
                         println!();
@@ -230,7 +238,11 @@ fn end_to_end_raw_can_to_mdf4_then_decode() -> Result<()> {
     std::fs::remove_file(&temp_path)?;
     println!("Temporary file removed.");
 
-    assert_eq!(groups.len(), 3, "Expected 3 channel groups (one per CAN ID)");
+    assert_eq!(
+        groups.len(),
+        3,
+        "Expected 3 channel groups (one per CAN ID)"
+    );
 
     println!("\nRaw CAN integration test PASSED!\n");
     Ok(())

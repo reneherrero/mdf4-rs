@@ -145,25 +145,38 @@ impl FakeVehicleEcu {
         let temp_raw = ((self.coolant_temp + 40.0) as i16).clamp(0, 255) as u8;
         let throttle_raw = (self.throttle * 100.0 / 0.5) as u8;
 
-        MockCanFrame::new_standard(0x100, &[
-            (rpm_raw & 0xFF) as u8,
-            ((rpm_raw >> 8) & 0xFF) as u8,
-            temp_raw,
-            throttle_raw,
-            0, 0, 0, 0,
-        ])
+        MockCanFrame::new_standard(
+            0x100,
+            &[
+                (rpm_raw & 0xFF) as u8,
+                ((rpm_raw >> 8) & 0xFF) as u8,
+                temp_raw,
+                throttle_raw,
+                0,
+                0,
+                0,
+                0,
+            ],
+        )
     }
 
     pub fn generate_vehicle_frame(&self) -> MockCanFrame {
         let speed_raw = (self.speed / 0.01) as u16;
         let brake_raw = (self.brake * 100.0 / 0.5) as u8;
 
-        MockCanFrame::new_standard(0x200, &[
-            (speed_raw & 0xFF) as u8,
-            ((speed_raw >> 8) & 0xFF) as u8,
-            brake_raw,
-            0, 0, 0, 0, 0,
-        ])
+        MockCanFrame::new_standard(
+            0x200,
+            &[
+                (speed_raw & 0xFF) as u8,
+                ((speed_raw >> 8) & 0xFF) as u8,
+                brake_raw,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+        )
     }
 
     pub fn generate_transmission_frame(&self) -> MockCanFrame {
@@ -192,13 +205,16 @@ impl FakeCanDriver {
         self.ecu.update(delta_time_ms as f64 / 1000.0);
 
         if self.current_time_us % 10_000 == 0 {
-            self.frame_buffer.push((self.current_time_us, self.ecu.generate_engine_frame()));
+            self.frame_buffer
+                .push((self.current_time_us, self.ecu.generate_engine_frame()));
         }
         if self.current_time_us % 20_000 == 0 {
-            self.frame_buffer.push((self.current_time_us, self.ecu.generate_vehicle_frame()));
+            self.frame_buffer
+                .push((self.current_time_us, self.ecu.generate_vehicle_frame()));
         }
         if self.current_time_us % 100_000 == 0 {
-            self.frame_buffer.push((self.current_time_us, self.ecu.generate_transmission_frame()));
+            self.frame_buffer
+                .push((self.current_time_us, self.ecu.generate_transmission_frame()));
         }
     }
 
@@ -274,6 +290,9 @@ mod tests {
             ecu.update(0.01);
         }
 
-        assert!(ecu.speed < speed_before_brake, "Speed should decrease when braking");
+        assert!(
+            ecu.speed < speed_before_brake,
+            "Speed should decrease when braking"
+        );
     }
 }

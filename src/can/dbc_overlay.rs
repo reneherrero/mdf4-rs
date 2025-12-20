@@ -234,6 +234,7 @@ impl<'dbc> DbcOverlayReader<'dbc> {
     /// Read all raw frames from the MDF file.
     ///
     /// Returns a vector of (timestamp_us, can_id, is_extended, data) tuples.
+    #[allow(clippy::type_complexity)]
     pub fn read_raw_frames<R: ByteRangeReader<Error = Error>>(
         &self,
         reader: &mut R,
@@ -242,15 +243,21 @@ impl<'dbc> DbcOverlayReader<'dbc> {
 
         for raw_group in &self.raw_can_groups {
             // Read all channel values for this group
-            let timestamps =
-                self.index
-                    .read_channel_values(raw_group.group_index, raw_group.timestamp_channel, reader)?;
-            let can_ids =
-                self.index
-                    .read_channel_values(raw_group.group_index, raw_group.can_id_channel, reader)?;
-            let dlcs =
-                self.index
-                    .read_channel_values(raw_group.group_index, raw_group.dlc_channel, reader)?;
+            let timestamps = self.index.read_channel_values(
+                raw_group.group_index,
+                raw_group.timestamp_channel,
+                reader,
+            )?;
+            let can_ids = self.index.read_channel_values(
+                raw_group.group_index,
+                raw_group.can_id_channel,
+                reader,
+            )?;
+            let dlcs = self.index.read_channel_values(
+                raw_group.group_index,
+                raw_group.dlc_channel,
+                reader,
+            )?;
 
             let ides = if let Some(ide_ch) = raw_group.ide_channel {
                 self.index
@@ -262,7 +269,9 @@ impl<'dbc> DbcOverlayReader<'dbc> {
             // Read data channels
             let mut data_columns: Vec<Vec<Option<DecodedValue>>> = Vec::new();
             for &data_ch in &raw_group.data_channels {
-                let values = self.index.read_channel_values(raw_group.group_index, data_ch, reader)?;
+                let values =
+                    self.index
+                        .read_channel_values(raw_group.group_index, data_ch, reader)?;
                 data_columns.push(values);
             }
 
@@ -441,10 +450,7 @@ impl<'dbc> DbcOverlayReader<'dbc> {
     }
 
     /// Get all unique CAN IDs found in the raw capture.
-    pub fn can_ids<R: ByteRangeReader<Error = Error>>(
-        &self,
-        reader: &mut R,
-    ) -> Result<Vec<u32>> {
+    pub fn can_ids<R: ByteRangeReader<Error = Error>>(&self, reader: &mut R) -> Result<Vec<u32>> {
         use alloc::collections::BTreeSet;
 
         let frames = self.read_raw_frames(reader)?;
@@ -623,7 +629,11 @@ BO_ 512 Transmission : 8 ECM
         assert_eq!(frame.can_id, 256);
 
         // Find RPM signal
-        let rpm = frame.signals.iter().find(|(name, _)| name == "RPM").unwrap();
+        let rpm = frame
+            .signals
+            .iter()
+            .find(|(name, _)| name == "RPM")
+            .unwrap();
         assert!((rpm.1 - 2000.0).abs() < 0.1);
 
         // Read RPM signal values directly

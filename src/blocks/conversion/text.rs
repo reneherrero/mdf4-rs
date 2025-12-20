@@ -9,7 +9,7 @@ use crate::types::DecodedValue;
 /// If no range matches, returns `n` (the default index).
 pub fn find_range_to_text_index(cc_val: &[f64], raw: f64, inclusive_upper: bool) -> usize {
     let len = cc_val.len();
-    if len < 2 || !len.is_multiple_of(2) {
+    if len < 2 || len % 2 != 0 {
         return 0;
     }
     let n = len / 2;

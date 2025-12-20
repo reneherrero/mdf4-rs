@@ -1,8 +1,8 @@
 //! End-to-end integration test: CAN FD logging -> MDF4 -> Read
 
-use mdf4_rs::{MDF, Result, DecodedValue};
-use mdf4_rs::can::{RawCanLogger, FdFlags, SimpleFdFrame};
 use embedded_can::StandardId;
+use mdf4_rs::can::{FdFlags, RawCanLogger, SimpleFdFrame};
+use mdf4_rs::{DecodedValue, MDF, Result};
 
 /// Test CAN FD frame logging with raw logger
 #[test]
@@ -19,7 +19,11 @@ fn end_to_end_raw_can_fd_to_mdf4() -> Result<()> {
     println!("\nStep 2: Logging CAN FD frames of various sizes...");
 
     // Classic CAN frame (8 bytes)
-    logger.log(0x100, 1000, &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+    logger.log(
+        0x100,
+        1000,
+        &[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08],
+    );
     println!("  - Logged classic CAN frame (8 bytes) at 0x100");
 
     // CAN FD frames with increasing sizes
@@ -60,8 +64,11 @@ fn end_to_end_raw_can_fd_to_mdf4() -> Result<()> {
     logger.log_fd(0x400, 9000, &[0x34; 48], both_flags);
     println!("  - Logged CAN FD frame (48 bytes, BRS+ESI) at 0x400");
 
-    println!("\n  - Total: {} frames, {} unique IDs",
-             logger.total_frame_count(), logger.unique_id_count());
+    println!(
+        "\n  - Total: {} frames, {} unique IDs",
+        logger.total_frame_count(),
+        logger.unique_id_count()
+    );
     println!("  - Has FD frames: {}", logger.has_fd_frames());
     println!("  - Max data length: {} bytes", logger.max_data_length());
 
@@ -81,17 +88,26 @@ fn end_to_end_raw_can_fd_to_mdf4() -> Result<()> {
     println!("  - Found {} channel groups", groups.len());
 
     // Verify we have the expected number of groups (one per CAN ID)
-    assert_eq!(groups.len(), 9, "Expected 9 channel groups (one per CAN ID)");
+    assert_eq!(
+        groups.len(),
+        9,
+        "Expected 9 channel groups (one per CAN ID)"
+    );
 
     // Verify channel structure for FD frames
     for group in groups.iter() {
         let group_name = group.name()?.unwrap_or_else(|| "(unnamed)".to_string());
         let channels = group.channels();
 
-        println!("\n  Channel Group: {} ({} channels)", group_name, channels.len());
+        println!(
+            "\n  Channel Group: {} ({} channels)",
+            group_name,
+            channels.len()
+        );
 
         // FD frames should have: Timestamp, CAN_ID, DLC, FD_Flags, Data_0..Data_N
-        let channel_names: Vec<String> = channels.iter()
+        let channel_names: Vec<String> = channels
+            .iter()
             .map(|c| c.name().ok().flatten().unwrap_or_default())
             .collect();
 
@@ -102,11 +118,15 @@ fn end_to_end_raw_can_fd_to_mdf4() -> Result<()> {
         assert!(channel_names.contains(&"Data_0".to_string()));
 
         // Print data channels present
-        let data_channels: Vec<_> = channel_names.iter()
+        let data_channels: Vec<_> = channel_names
+            .iter()
             .filter(|n| n.starts_with("Data_"))
             .collect();
-        println!("    Data channels: {} (Data_0 to Data_{})",
-                 data_channels.len(), data_channels.len() - 1);
+        println!(
+            "    Data channels: {} (Data_0 to Data_{})",
+            data_channels.len(),
+            data_channels.len() - 1
+        );
     }
 
     // Step 5: Verify specific frame data
@@ -166,12 +186,22 @@ fn end_to_end_raw_can_fd_to_mdf4() -> Result<()> {
 
         if !can_id_vals.is_empty() {
             let can_id = can_id_vals[0];
-            let flags = if !fd_flags_vals.is_empty() { fd_flags_vals[0] } else { 0 };
+            let flags = if !fd_flags_vals.is_empty() {
+                fd_flags_vals[0]
+            } else {
+                0
+            };
             let dlc = if !dlc_vals.is_empty() { dlc_vals[0] } else { 0 };
 
             let fd_flags = FdFlags::from_byte(flags);
-            println!("\n  {} (ID=0x{:03X}): DLC={}, BRS={}, ESI={}",
-                     group_name, can_id, dlc, fd_flags.brs(), fd_flags.esi());
+            println!(
+                "\n  {} (ID=0x{:03X}): DLC={}, BRS={}, ESI={}",
+                group_name,
+                can_id,
+                dlc,
+                fd_flags.brs(),
+                fd_flags.esi()
+            );
 
             // Verify specific frame contents
             match can_id {
@@ -252,7 +282,8 @@ fn end_to_end_fd_frame_trait() -> Result<()> {
 
     // Find record count
     let first_channel = channels.first();
-    let record_count = first_channel.map(|c| c.values().ok())
+    let record_count = first_channel
+        .map(|c| c.values().ok())
         .flatten()
         .map(|v| v.len())
         .unwrap_or(0);
@@ -293,7 +324,10 @@ fn end_to_end_mixed_classic_and_fd() -> Result<()> {
     logger.log_fd(can_id, 5000, &[0x55; 64], FdFlags::default());
 
     println!("  - Logged 2 classic + 3 FD frames on same CAN ID");
-    println!("  - Max data length seen: {} bytes", logger.max_data_length());
+    println!(
+        "  - Max data length seen: {} bytes",
+        logger.max_data_length()
+    );
 
     let mdf_bytes = logger.finalize()?;
 
@@ -309,14 +343,26 @@ fn end_to_end_mixed_classic_and_fd() -> Result<()> {
     let channels = group.channels();
 
     // Count data channels - should have up to 64 for FD support
-    let data_channel_count = channels.iter()
-        .filter(|c| c.name().ok().flatten().map(|n| n.starts_with("Data_")).unwrap_or(false))
+    let data_channel_count = channels
+        .iter()
+        .filter(|c| {
+            c.name()
+                .ok()
+                .flatten()
+                .map(|n| n.starts_with("Data_"))
+                .unwrap_or(false)
+        })
         .count();
 
-    assert!(data_channel_count >= 64, "Expected at least 64 data channels for FD support, got {}", data_channel_count);
+    assert!(
+        data_channel_count >= 64,
+        "Expected at least 64 data channels for FD support, got {}",
+        data_channel_count
+    );
 
     // Verify record count
-    let record_count = channels.first()
+    let record_count = channels
+        .first()
         .map(|c| c.values().ok())
         .flatten()
         .map(|v| v.len())

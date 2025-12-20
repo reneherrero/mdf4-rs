@@ -126,10 +126,15 @@ impl FdFlags {
     }
 }
 
+// ============================================================================
+// embedded_can integration (requires `can` feature)
+// ============================================================================
+
 /// Trait for CAN FD frames.
 ///
 /// This extends the concept of `embedded_can::Frame` for CAN FD,
 /// supporting up to 64 bytes of data and FD-specific flags.
+#[cfg(feature = "can")]
 pub trait FdFrame: Sized {
     /// Creates a new CAN FD frame.
     ///
@@ -178,6 +183,7 @@ pub trait FdFrame: Sized {
 }
 
 /// A simple CAN FD frame implementation.
+#[cfg(feature = "can")]
 #[derive(Debug, Clone)]
 pub struct SimpleFdFrame {
     id: embedded_can::Id,
@@ -187,6 +193,7 @@ pub struct SimpleFdFrame {
     is_fd: bool,
 }
 
+#[cfg(feature = "can")]
 impl SimpleFdFrame {
     /// Create a new classic CAN frame (up to 8 bytes).
     pub fn new_classic(id: impl Into<embedded_can::Id>, data: &[u8]) -> Option<Self> {
@@ -205,7 +212,11 @@ impl SimpleFdFrame {
     }
 
     /// Create a new CAN FD frame (up to 64 bytes).
-    pub fn new_fd_frame(id: impl Into<embedded_can::Id>, data: &[u8], flags: FdFlags) -> Option<Self> {
+    pub fn new_fd_frame(
+        id: impl Into<embedded_can::Id>,
+        data: &[u8],
+        flags: FdFlags,
+    ) -> Option<Self> {
         if data.len() > MAX_FD_DATA_LEN {
             return None;
         }
@@ -221,6 +232,7 @@ impl SimpleFdFrame {
     }
 }
 
+#[cfg(feature = "can")]
 impl FdFrame for SimpleFdFrame {
     fn new_fd(id: impl Into<embedded_can::Id>, data: &[u8], flags: FdFlags) -> Option<Self> {
         Self::new_fd_frame(id, data, flags)
@@ -248,6 +260,7 @@ impl FdFrame for SimpleFdFrame {
 }
 
 // Implement embedded_can::Frame for SimpleFdFrame for classic CAN compatibility
+#[cfg(feature = "can")]
 impl embedded_can::Frame for SimpleFdFrame {
     fn new(id: impl Into<embedded_can::Id>, data: &[u8]) -> Option<Self> {
         Self::new_classic(id, data)
@@ -290,7 +303,6 @@ impl embedded_can::Frame for SimpleFdFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use embedded_can::StandardId;
 
     #[test]
     fn test_dlc_to_len() {
@@ -317,7 +329,7 @@ mod tests {
         assert_eq!(len_to_dlc(48), 14);
         assert_eq!(len_to_dlc(64), 15);
         // In-between values
-        assert_eq!(len_to_dlc(10), 9);  // 10 bytes needs DLC 9 (12 bytes)
+        assert_eq!(len_to_dlc(10), 9); // 10 bytes needs DLC 9 (12 bytes)
         assert_eq!(len_to_dlc(50), 15); // 50 bytes needs DLC 15 (64 bytes)
     }
 
@@ -341,8 +353,11 @@ mod tests {
         assert!(flags.esi());
     }
 
+    #[cfg(feature = "can")]
     #[test]
     fn test_simple_fd_frame_classic() {
+        use embedded_can::StandardId;
+
         let id = StandardId::new(0x100).unwrap();
         let frame = SimpleFdFrame::new_classic(id, &[1, 2, 3, 4, 5, 6, 7, 8]).unwrap();
 
@@ -352,8 +367,11 @@ mod tests {
         assert!(!frame.fd_flags().esi());
     }
 
+    #[cfg(feature = "can")]
     #[test]
     fn test_simple_fd_frame_fd() {
+        use embedded_can::StandardId;
+
         let id = StandardId::new(0x100).unwrap();
         let data = [0xAAu8; 32];
         let flags = FdFlags::new(true, false);
@@ -365,8 +383,11 @@ mod tests {
         assert!(!frame.fd_flags().esi());
     }
 
+    #[cfg(feature = "can")]
     #[test]
     fn test_simple_fd_frame_max_size() {
+        use embedded_can::StandardId;
+
         let id = StandardId::new(0x100).unwrap();
         let data = [0xBBu8; 64];
         let frame = SimpleFdFrame::new_fd_frame(id, &data, FdFlags::default()).unwrap();
@@ -375,8 +396,11 @@ mod tests {
         assert_eq!(frame.data().len(), 64);
     }
 
+    #[cfg(feature = "can")]
     #[test]
     fn test_simple_fd_frame_too_large() {
+        use embedded_can::StandardId;
+
         let id = StandardId::new(0x100).unwrap();
         let data = [0u8; 65]; // Too large
         assert!(SimpleFdFrame::new_fd_frame(id, &data, FdFlags::default()).is_none());

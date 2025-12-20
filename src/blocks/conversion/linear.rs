@@ -288,7 +288,7 @@ fn pow_compat(base: f64, exp: f64) -> f64 {
         {
             // For no_std without libm, we return NaN for non-integer exponents
             // This is a rare edge case in MDF4 algebraic formulas
-            core::f64::NAN
+            f64::NAN
         }
     }
 }

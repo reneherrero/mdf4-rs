@@ -26,7 +26,7 @@ pub use header_block::HeaderBlock;
 pub use identification_block::IdentificationBlock;
 pub use metadata_block::MetadataBlock;
 pub use signal_data_block::SignalDataBlock;
-pub use source_block::{SourceBlock, SourceType, BusType, read_source_block};
+pub use source_block::{BusType, SourceBlock, SourceType, read_source_block};
 pub use text_block::TextBlock;
 
 // Re-export conversion types

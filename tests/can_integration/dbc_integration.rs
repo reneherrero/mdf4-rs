@@ -1,7 +1,7 @@
 //! End-to-end integration test: CAN Driver -> DBC Decode -> MDF4 -> Read
 
+use mdf4_rs::can::CanDbcLogger;
 use mdf4_rs::{MDF, Result};
-use mdf4_rs::can::DbcMdfLogger;
 
 use super::{FakeCanDriver, VEHICLE_DBC};
 
@@ -16,12 +16,17 @@ fn end_to_end_can_to_mdf4_integration() -> Result<()> {
     let dbc = dbc_rs::Dbc::parse(VEHICLE_DBC).expect("Failed to parse DBC");
     println!("  - Found {} messages:", dbc.messages().len());
     for msg in dbc.messages().iter() {
-        println!("    - 0x{:03X} {} ({} signals)", msg.id(), msg.name(), msg.signals().iter().count());
+        println!(
+            "    - 0x{:03X} {} ({} signals)",
+            msg.id(),
+            msg.name(),
+            msg.signals().iter().count()
+        );
     }
 
     // Step 2: Create MDF logger with full metadata
     println!("\nStep 2: Creating MDF4 logger with DBC integration...");
-    let mut logger = DbcMdfLogger::builder(&dbc)
+    let mut logger = CanDbcLogger::builder(&dbc)
         .store_raw_values(true)
         .include_units(true)
         .include_limits(true)
@@ -111,7 +116,9 @@ fn end_to_end_can_to_mdf4_integration() -> Result<()> {
         println!("  Channels: {}", channels.len());
 
         for (cidx, channel) in channels.iter().enumerate() {
-            let name = channel.name()?.unwrap_or_else(|| format!("Channel{}", cidx));
+            let name = channel
+                .name()?
+                .unwrap_or_else(|| format!("Channel{}", cidx));
             let unit = channel.unit()?.unwrap_or_default();
             let data_type = format!("{:?}", channel.block().data_type);
             let bit_count = channel.block().bit_count;
