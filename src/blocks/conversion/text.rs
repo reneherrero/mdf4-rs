@@ -55,10 +55,10 @@ pub fn apply_value_to_text(
     }
 
     // If no match found and we have a default conversion, use it
-    if idx >= block.cc_val.len()
-        && let Some(default_conversion) = block.get_default_conversion()
-    {
-        return default_conversion.apply_decoded(value, &[]);
+    if idx >= block.cc_val.len() {
+        if let Some(default_conversion) = block.get_default_conversion() {
+            return default_conversion.apply_decoded(value, &[]);
+        }
     }
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
@@ -134,10 +134,10 @@ pub fn apply_range_to_text(
     }
 
     // If no range matched (idx == n_ranges) and we have a default conversion, use it
-    if idx >= n_ranges
-        && let Some(default_conversion) = block.get_default_conversion()
-    {
-        return default_conversion.apply_decoded(value, &[]);
+    if idx >= n_ranges {
+        if let Some(default_conversion) = block.get_default_conversion() {
+            return default_conversion.apply_decoded(value, &[]);
+        }
     }
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
@@ -224,13 +224,13 @@ pub fn apply_text_to_value(
         if link == 0 {
             continue;
         }
-        if let Some(key_str) = read_string_block(file_data, link)?
-            && input == key_str
-        {
-            if i < block.cc_val.len() {
-                return Ok(DecodedValue::Float(block.cc_val[i]));
-            } else {
-                return Ok(DecodedValue::Unknown);
+        if let Some(key_str) = read_string_block(file_data, link)? {
+            if input == key_str {
+                if i < block.cc_val.len() {
+                    return Ok(DecodedValue::Float(block.cc_val[i]));
+                } else {
+                    return Ok(DecodedValue::Unknown);
+                }
             }
         }
     }
@@ -259,14 +259,14 @@ pub fn apply_text_to_text(
             let key_idx = 2 * i;
             let output_idx = 2 * i + 1;
 
-            if let Some(key_str) = resolved_texts.get(&key_idx)
-                && *key_str == input
-            {
-                return if let Some(output_str) = resolved_texts.get(&output_idx) {
-                    Ok(DecodedValue::String(output_str.clone()))
-                } else {
-                    Ok(DecodedValue::String(input))
-                };
+            if let Some(key_str) = resolved_texts.get(&key_idx) {
+                if *key_str == input {
+                    return if let Some(output_str) = resolved_texts.get(&output_idx) {
+                        Ok(DecodedValue::String(output_str.clone()))
+                    } else {
+                        Ok(DecodedValue::String(input))
+                    };
+                }
             }
         }
         // Default case with resolved texts
@@ -282,16 +282,16 @@ pub fn apply_text_to_text(
     for i in 0..pairs {
         let key_link = block.cc_ref[2 * i];
         let output_link = block.cc_ref[2 * i + 1];
-        if let Some(key_str) = read_string_block(file_data, key_link)?
-            && key_str == input
-        {
-            return if output_link == 0 {
-                Ok(DecodedValue::String(input))
-            } else {
-                Ok(read_string_block(file_data, output_link)?
-                    .map(DecodedValue::String)
-                    .unwrap_or(DecodedValue::String(input)))
-            };
+        if let Some(key_str) = read_string_block(file_data, key_link)? {
+            if key_str == input {
+                return if output_link == 0 {
+                    Ok(DecodedValue::String(input))
+                } else {
+                    Ok(read_string_block(file_data, output_link)?
+                        .map(DecodedValue::String)
+                        .unwrap_or(DecodedValue::String(input)))
+                };
+            }
         }
     }
     let default_link = *block.cc_ref.get(2 * pairs).unwrap_or(&0);

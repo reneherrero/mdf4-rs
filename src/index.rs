@@ -550,10 +550,10 @@ impl MdfIndex {
         match conv.cc_type {
             // Algebraic conversion - first cc_ref is formula text
             ConversionType::Algebraic => {
-                if let Some(&formula_addr) = conv.cc_ref.first()
-                    && formula_addr != 0
-                {
-                    conv.formula = Self::read_text_block(reader, formula_addr)?;
+                if let Some(&formula_addr) = conv.cc_ref.first() {
+                    if formula_addr != 0 {
+                        conv.formula = Self::read_text_block(reader, formula_addr)?;
+                    }
                 }
             }
             // Text-based conversions - resolve text references
@@ -569,10 +569,10 @@ impl MdfIndex {
                         let header_bytes = reader.read_range(ref_addr, 24)?;
                         let header = BlockHeader::from_bytes(&header_bytes)?;
 
-                        if (header.id == "##TX" || header.id == "##MD")
-                            && let Ok(Some(text)) = Self::read_text_block(reader, ref_addr)
-                        {
-                            resolved.insert(idx, text);
+                        if header.id == "##TX" || header.id == "##MD" {
+                            if let Ok(Some(text)) = Self::read_text_block(reader, ref_addr) {
+                                resolved.insert(idx, text);
+                            }
                         }
                         // Skip nested conversions for now - they're complex
                     }

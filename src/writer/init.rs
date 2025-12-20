@@ -226,12 +226,13 @@ impl<W: MdfWrite> MdfWriter<W> {
         self.update_block_u8(cn_id, CHANNEL_TYPE_OFFSET, 2)?;
         self.update_block_u8(cn_id, SYNC_TYPE_OFFSET, 1)?;
 
-        if let Some((cg, idx)) = self.channel_map.get(cn_id).cloned()
-            && let Some(chs) = self.cg_channels.get_mut(&cg)
-            && let Some(ch) = chs.get_mut(idx)
-        {
-            ch.channel_type = 2;
-            ch.sync_type = 1;
+        if let Some((cg, idx)) = self.channel_map.get(cn_id).cloned() {
+            if let Some(chs) = self.cg_channels.get_mut(&cg) {
+                if let Some(ch) = chs.get_mut(idx) {
+                    ch.channel_type = 2;
+                    ch.sync_type = 1;
+                }
+            }
         }
         Ok(())
     }
@@ -380,12 +381,13 @@ impl<W: MdfWrite> MdfWriter<W> {
         self.update_link(cn_pos + UPPER_LIMIT_OFFSET, max.to_bits())?;
 
         // Update in-memory copy
-        if let Some((cg, idx)) = self.channel_map.get(cn_id).cloned()
-            && let Some(chs) = self.cg_channels.get_mut(&cg)
-            && let Some(ch) = chs.get_mut(idx)
-        {
-            ch.lower_limit = min;
-            ch.upper_limit = max;
+        if let Some((cg, idx)) = self.channel_map.get(cn_id).cloned() {
+            if let Some(chs) = self.cg_channels.get_mut(&cg) {
+                if let Some(ch) = chs.get_mut(idx) {
+                    ch.lower_limit = min;
+                    ch.upper_limit = max;
+                }
+            }
         }
 
         Ok(())
