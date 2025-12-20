@@ -187,6 +187,8 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 [[package]]
 name = "dbc-rs"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13b4a2c26869c162f46e5aa63703f10fe66083bbcaa80be2aadb07a1d4bc5c29"
 
 [[package]]
 name = "either"
