@@ -1,12 +1,18 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2024"
-description = "mdf4-rs is a Rust library for working with Measurement Data Format (ASAM MDF4) files."
-license = "MIT"
+license = "MIT OR Apache-2.0"
+authors = ["mdf4-rs contributors"]
 repository = "https://github.com/reneherrero/mdf4-rs"
+homepage = "https://github.com/reneherrero/mdf4-rs"
+rust-version = "1.85.0"
 readme = "README.md"
-exclude = ["examples/", "tests/", "benches/"]
+description = "mdf4-rs is a Rust library for working with Measurement Data Format (ASAM MDF4) files."
+documentation = "https://docs.rs/mdf4-rs"
+keywords = ["mdf4", "can", "dbc", "automotive", "no_std"]
+categories = ["parsing", "embedded"]
+exclude = [".github/", "examples/", "tests/", "benches/"]
 
 [features]
 default = ["std", "can", "dbc"]
@@ -23,7 +29,7 @@ serde = { version = "1.0", default-features = false, features = [
 ], optional = true }
 serde_json = { version = "1.0", optional = true }
 embedded-can = { version = "0.4", optional = true }
-dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = [
+dbc-rs = { version = "0.1.1", path = "../dbc-rs", default-features = false, features = [
     "alloc",
 ], optional = true }
 
@@ -31,7 +37,7 @@ dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = [
 criterion = "0.8.1"
 serde = { version = "1.0", features = ["derive"] }
 embedded-can = "0.4"
-dbc-rs = { path = "../dbc-rs/dbc", default-features = false, features = [
+dbc-rs = { version = "0.1.1", path = "../dbc-rs", default-features = false, features = [
     "alloc",
 ] }
 

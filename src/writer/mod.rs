@@ -139,9 +139,12 @@ use crate::blocks::ChannelBlock;
 mod data;
 mod init;
 mod io;
+mod streaming;
 mod traits;
 
 use data::ChannelEncoder;
+use streaming::FlushState;
+pub use streaming::{FlushPolicy, StreamingConfig};
 pub use traits::{MdfWrite, VecWriter};
 
 #[cfg(feature = "std")]
@@ -183,6 +186,16 @@ struct OpenDataBlock {
 /// When using file-based writing (`std` feature), the writer uses internal
 /// buffering (1 MB by default). For different buffer sizes, use
 /// [`new_with_capacity()`](Self::new_with_capacity).
+///
+/// # Streaming Writes
+///
+/// For long-running captures, use [`with_flush_policy()`](Self::with_flush_policy)
+/// to enable automatic flushing:
+///
+/// ```ignore
+/// let mut writer = MdfWriter::new("output.mf4")?
+///     .with_flush_policy(FlushPolicy::EveryNRecords(1000));
+/// ```
 pub struct MdfWriter<W: MdfWrite = VecWriter> {
     writer: W,
     offset: u64,
@@ -194,6 +207,10 @@ pub struct MdfWriter<W: MdfWrite = VecWriter> {
     cg_offsets: BTreeMap<String, usize>,
     cg_channels: BTreeMap<String, Vec<ChannelBlock>>,
     channel_map: BTreeMap<String, (String, usize)>,
+    /// Streaming configuration for auto-flush behavior
+    streaming_config: StreamingConfig,
+    /// Tracks flush state for streaming writes
+    flush_state: FlushState,
 }
 
 impl<W: MdfWrite> MdfWriter<W> {
@@ -212,7 +229,54 @@ impl<W: MdfWrite> MdfWriter<W> {
             cg_offsets: BTreeMap::new(),
             cg_channels: BTreeMap::new(),
             channel_map: BTreeMap::new(),
+            streaming_config: StreamingConfig::default(),
+            flush_state: FlushState::default(),
         }
+    }
+
+    /// Configure the flush policy for streaming writes.
+    ///
+    /// When a flush policy is set, the writer will automatically flush buffered
+    /// data to disk based on the policy criteria. This is essential for long-running
+    /// captures where keeping all data in memory is not feasible.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mdf4_rs::{MdfWriter, FlushPolicy};
+    ///
+    /// // Flush every 1000 records
+    /// let mut writer = MdfWriter::new("output.mf4")?
+    ///     .with_flush_policy(FlushPolicy::EveryNRecords(1000));
+    ///
+    /// // Or flush every 1 MB
+    /// let mut writer = MdfWriter::new("output.mf4")?
+    ///     .with_flush_policy(FlushPolicy::EveryNBytes(1024 * 1024));
+    /// ```
+    pub fn with_flush_policy(mut self, policy: FlushPolicy) -> Self {
+        self.streaming_config.policy = policy;
+        self
+    }
+
+    /// Set the flush policy after construction.
+    pub fn set_flush_policy(&mut self, policy: FlushPolicy) {
+        self.streaming_config.policy = policy;
+    }
+
+    /// Get the current flush policy.
+    pub fn flush_policy(&self) -> &FlushPolicy {
+        &self.streaming_config.policy
+    }
+
+    /// Get streaming statistics.
+    ///
+    /// Returns (total_records, total_bytes, flush_count).
+    pub fn streaming_stats(&self) -> (u64, u64, u64) {
+        (
+            self.flush_state.total_records,
+            self.flush_state.total_bytes,
+            self.flush_state.flush_count,
+        )
     }
 
     /// Consume the writer and return the underlying writer backend.

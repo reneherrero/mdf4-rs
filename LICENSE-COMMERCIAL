@@ -1,16 +1,16 @@
 COMMERCIAL LICENSE AGREEMENT
 
 This Commercial License Agreement ("Agreement") is entered into between
-the copyright holder of the dbc-rs software ("Licensor") and the
+the copyright holder of the mdf4-rs software ("Licensor") and the
 entity or individual purchasing a commercial license ("Licensee").
 
 1. GRANT OF LICENSE
 
    Subject to the terms and conditions of this Agreement, Licensor
    grants Licensee a non-exclusive, non-transferable license to use,
-   modify, and distribute the dbc-rs software in proprietary and
+   modify, and distribute the mdf4-rs software in proprietary and
    commercial applications without the requirement to:
-   
+
    (a) Disclose source code modifications
    (b) Distribute derivative works under an open-source license
    (c) Include copyright notices in binary distributions
@@ -19,7 +19,7 @@ entity or individual purchasing a commercial license ("Licensee").
 2. RESTRICTIONS
 
    Licensee may NOT:
-   
+
    (a) Redistribute the software under an open-source license
    (b) Remove copyright notices from source code
    (c) Use the software to create competing products without permission
@@ -45,5 +45,5 @@ entity or individual purchasing a commercial license ("Licensee").
    IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY DAMAGES ARISING FROM
    USE OF THE SOFTWARE.
 
-For commercial licensing inquiries, please [create an **Issue** in GitHub](https://github.com/reneherrero/dbc-rs/issues).
+For commercial licensing inquiries, please [create an **Issue** in GitHub](https://github.com/reneherrero/mdf4-rs/issues).
 

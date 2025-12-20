@@ -38,6 +38,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::dbc_compat::SignalInfo;
+use crate::writer::FlushPolicy;
 
 /// Key for identifying a specific channel group buffer.
 /// For non-multiplexed messages: (can_id, None)
@@ -86,6 +87,7 @@ pub struct DbcMdfLoggerBuilder<'dbc> {
     dbc: &'dbc dbc_rs::Dbc,
     config: DbcMdfLoggerConfig,
     capacity: Option<usize>,
+    flush_policy: Option<FlushPolicy>,
 }
 
 impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
@@ -95,6 +97,7 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
             dbc,
             config: DbcMdfLoggerConfig::default(),
             capacity: None,
+            flush_policy: None,
         }
     }
 
@@ -154,22 +157,49 @@ impl<'dbc> DbcMdfLoggerBuilder<'dbc> {
         self
     }
 
+    /// Set the flush policy for streaming writes.
+    ///
+    /// When a flush policy is set, the underlying MDF writer will automatically
+    /// flush buffered data to disk based on the policy criteria. This is essential
+    /// for long-running captures where keeping all data in memory is not feasible.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mdf4_rs::can::DbcMdfLogger;
+    /// use mdf4_rs::FlushPolicy;
+    ///
+    /// let mut logger = DbcMdfLogger::builder(&dbc)
+    ///     .with_flush_policy(FlushPolicy::EveryNRecords(1000))
+    ///     .build_file("output.mf4")?;
+    /// ```
+    pub fn with_flush_policy(mut self, policy: FlushPolicy) -> Self {
+        self.flush_policy = Some(policy);
+        self
+    }
+
     /// Build the logger with in-memory output.
     pub fn build(self) -> crate::Result<DbcMdfLogger<'dbc, crate::writer::VecWriter>> {
-        let writer = match self.capacity {
+        let mut writer = match self.capacity {
             Some(cap) => crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(cap)),
             None => crate::MdfWriter::from_writer(crate::writer::VecWriter::new()),
         };
+        if let Some(policy) = self.flush_policy {
+            writer.set_flush_policy(policy);
+        }
         Ok(DbcMdfLogger::with_config(self.dbc, writer, self.config))
     }
 
     /// Build the logger with file output.
     #[cfg(feature = "std")]
     pub fn build_file(self, path: &str) -> crate::Result<DbcMdfLogger<'dbc, crate::writer::FileWriter>> {
-        let writer = match self.capacity {
+        let mut writer = match self.capacity {
             Some(cap) => crate::MdfWriter::new_with_capacity(path, cap)?,
             None => crate::MdfWriter::new(path)?,
         };
+        if let Some(policy) = self.flush_policy {
+            writer.set_flush_policy(policy);
+        }
         Ok(DbcMdfLogger::with_config(self.dbc, writer, self.config))
     }
 }
@@ -1147,5 +1177,78 @@ BO_ 256 Engine : 8 ECM
 
         // Cleanup
         std::fs::remove_file(&temp_path).ok();
+    }
+
+    #[test]
+    fn test_streaming_with_flush_policy() {
+        use crate::FlushPolicy;
+
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM
+
+BO_ 256 Engine : 8 ECM
+ SG_ RPM : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
+"#,
+        )
+        .unwrap();
+
+        // Create logger with flush policy
+        let mut logger = DbcMdfLogger::builder(&dbc)
+            .with_flush_policy(FlushPolicy::EveryNRecords(10))
+            .build()
+            .unwrap();
+
+        // Log 25 frames - should trigger 2 auto-flushes (at 10 and 20)
+        for i in 0..25 {
+            let rpm_raw = (i * 100) as u16;
+            let data = rpm_raw.to_le_bytes();
+            let mut frame = [0u8; 8];
+            frame[0..2].copy_from_slice(&data);
+            assert!(logger.log(256, i as u64 * 1000, &frame));
+        }
+
+        assert_eq!(logger.frame_count(256), 25);
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
+        assert_eq!(&mdf_bytes[0..3], b"MDF");
+    }
+
+    #[test]
+    fn test_streaming_with_bytes_policy() {
+        use crate::FlushPolicy;
+
+        let dbc = dbc_rs::Dbc::parse(
+            r#"VERSION "1.0"
+
+BU_: ECM
+
+BO_ 256 Engine : 8 ECM
+ SG_ RPM : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
+"#,
+        )
+        .unwrap();
+
+        // Create logger with byte-based flush policy
+        let mut logger = DbcMdfLogger::builder(&dbc)
+            .with_flush_policy(FlushPolicy::EveryNBytes(1024))
+            .build()
+            .unwrap();
+
+        // Log frames
+        for i in 0..100 {
+            let rpm_raw = (i * 100) as u16;
+            let data = rpm_raw.to_le_bytes();
+            let mut frame = [0u8; 8];
+            frame[0..2].copy_from_slice(&data);
+            assert!(logger.log(256, i as u64 * 1000, &frame));
+        }
+
+        assert_eq!(logger.frame_count(256), 100);
+
+        let mdf_bytes = logger.finalize().unwrap();
+        assert!(!mdf_bytes.is_empty());
     }
 }

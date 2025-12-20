@@ -158,6 +158,42 @@ impl<W: MdfWrite> MdfWriter<W> {
         self.offset
     }
 
+    /// Flush buffered data to the underlying writer.
+    ///
+    /// This method flushes all buffered record data to disk without finalizing
+    /// the file. It's useful for long-running captures where you want to ensure
+    /// data is persisted periodically.
+    ///
+    /// After a flush:
+    /// - All buffered data is written to disk
+    /// - The file remains in a valid state (DT blocks have proper sizes)
+    /// - Writing can continue normally
+    ///
+    /// Note: This does NOT create DL blocks or update final record counts.
+    /// Those are handled during [`finish_data_block()`](Self::finish_data_block) and finalization.
+    pub fn flush(&mut self) -> Result<()> {
+        self.writer.flush()?;
+        self.flush_state.on_flush();
+        Ok(())
+    }
+
+    /// Check if auto-flush should be triggered and perform it if needed.
+    ///
+    /// This is called internally after each write_record when a flush policy is set.
+    pub(super) fn maybe_auto_flush(&mut self) -> Result<bool> {
+        if self.flush_state.should_flush(&self.streaming_config.policy) {
+            self.flush()?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Record that data was written for streaming tracking.
+    pub(super) fn record_write(&mut self, records: u64, bytes: u64) {
+        self.flush_state.record_write(records, bytes);
+    }
+
     /// Finalizes the file (flushes all data to disk).
     pub fn finalize(&mut self) -> Result<()> {
         self.writer.flush()?;

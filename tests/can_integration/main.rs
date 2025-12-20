@@ -4,8 +4,10 @@
 //! - `dbc_integration`: Tests with DBC signal decoding
 //! - `raw_integration`: Tests without DBC (raw frame capture and later decoding)
 //! - `fd_integration`: Tests for CAN FD (Flexible Data-rate) support
+//! - `extended_id_integration`: Tests for Extended CAN IDs (29-bit)
 
 mod dbc_integration;
+mod extended_id_integration;
 mod fd_integration;
 mod raw_integration;
 

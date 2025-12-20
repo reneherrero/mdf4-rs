@@ -181,6 +181,9 @@ impl<W: MdfWrite> MdfWriter<W> {
     }
 
     /// Append one record to the currently open DTBLOCK for the given channel group.
+    ///
+    /// If a flush policy is configured, this method will automatically flush
+    /// to disk when the policy threshold is reached.
     pub fn write_record(&mut self, cg_id: &str, values: &[DecodedValue]) -> Result<()> {
         let potential_new_block = {
             let dt = self.open_dts.get(cg_id).ok_or_else(|| {
@@ -236,14 +239,23 @@ impl<W: MdfWrite> MdfWriter<W> {
         encode_values(&dt.encoders, &mut dt.record_buf, values);
 
         let buf = dt.record_buf.clone();
+        let record_bytes = buf.len() as u64;
         self.writer.write_all(&buf)?;
         let dt = self.open_dts.get_mut(cg_id).unwrap();
         dt.record_count += 1;
-        self.offset += dt.record_buf.len() as u64;
+        self.offset += record_bytes;
+
+        // Track write for streaming and check auto-flush
+        self.record_write(1, record_bytes);
+        self.maybe_auto_flush()?;
+
         Ok(())
     }
 
     /// Fast path for uniform unsigned integer channel groups.
+    ///
+    /// If a flush policy is configured, this method will automatically flush
+    /// to disk when the policy threshold is reached.
     pub fn write_record_u64(&mut self, cg_id: &str, values: &[u64]) -> Result<()> {
         let dt = self.open_dts.get_mut(cg_id).ok_or_else(|| {
             Error::BlockSerializationError("no open DT block for this channel group".into())
@@ -267,16 +279,25 @@ impl<W: MdfWrite> MdfWriter<W> {
             enc.encode_u64(&mut dt.record_buf, v);
         }
         let buf = dt.record_buf.clone();
+        let record_bytes = buf.len() as u64;
         self.writer.write_all(&buf)?;
         let dt = self.open_dts.get_mut(cg_id).unwrap();
         dt.record_count += 1;
-        self.offset += dt.record_buf.len() as u64;
+        self.offset += record_bytes;
+
+        // Track write for streaming and check auto-flush
+        self.record_write(1, record_bytes);
+        self.maybe_auto_flush()?;
+
         Ok(())
     }
 
     /// Append multiple records sequentially for the specified channel group.
     /// The provided iterator yields record value slices. All encoded bytes are
     /// buffered and written in a single call to reduce I/O overhead.
+    ///
+    /// If a flush policy is configured, this method will check for auto-flush
+    /// after all records are written.
     pub fn write_records<'a, I>(&mut self, cg_id: &str, records: I) -> Result<()>
     where
         I: IntoIterator<Item = &'a [DecodedValue]>,
@@ -291,6 +312,9 @@ impl<W: MdfWrite> MdfWriter<W> {
         };
         let max_records = (MAX_DT_BLOCK_SIZE - 24) / record_size;
         let mut buffer = Vec::with_capacity(record_size * max_records);
+        let mut records_written = 0u64;
+        let mut bytes_written = 0u64;
+
         for record in records {
             let potential_new_block = {
                 let dt = self.open_dts.get(cg_id).ok_or_else(|| {
@@ -305,8 +329,10 @@ impl<W: MdfWrite> MdfWriter<W> {
             };
 
             if potential_new_block {
+                let buf_len = buffer.len() as u64;
                 self.writer.write_all(&buffer)?;
-                self.offset += buffer.len() as u64;
+                self.offset += buf_len;
+                bytes_written += buf_len;
                 buffer.clear();
 
                 let (start_pos, record_count, record_size) = {
@@ -344,16 +370,29 @@ impl<W: MdfWrite> MdfWriter<W> {
             encode_values(&dt.encoders, &mut dt.record_buf, record);
             buffer.extend_from_slice(&dt.record_buf);
             dt.record_count += 1;
+            records_written += 1;
         }
 
         if !buffer.is_empty() {
+            let buf_len = buffer.len() as u64;
             self.writer.write_all(&buffer)?;
-            self.offset += buffer.len() as u64;
+            self.offset += buf_len;
+            bytes_written += buf_len;
         }
+
+        // Track writes for streaming and check auto-flush
+        if records_written > 0 {
+            self.record_write(records_written, bytes_written);
+            self.maybe_auto_flush()?;
+        }
+
         Ok(())
     }
 
     /// Batch write for uniform unsigned integer channel groups.
+    ///
+    /// If a flush policy is configured, this method will check for auto-flush
+    /// after all records are written.
     pub fn write_records_u64<'a, I>(&mut self, cg_id: &str, records: I) -> Result<()>
     where
         I: IntoIterator<Item = &'a [u64]>,
@@ -368,6 +407,9 @@ impl<W: MdfWrite> MdfWriter<W> {
         };
         let max_records = (MAX_DT_BLOCK_SIZE - 24) / record_size;
         let mut buffer = Vec::with_capacity(record_size * max_records);
+        let mut records_written = 0u64;
+        let mut bytes_written = 0u64;
+
         for rec in records {
             let potential_new_block = {
                 let dt = self.open_dts.get(cg_id).ok_or_else(|| {
@@ -391,8 +433,10 @@ impl<W: MdfWrite> MdfWriter<W> {
             };
 
             if potential_new_block {
+                let buf_len = buffer.len() as u64;
                 self.writer.write_all(&buffer)?;
-                self.offset += buffer.len() as u64;
+                self.offset += buf_len;
+                bytes_written += buf_len;
                 buffer.clear();
 
                 let (start_pos, record_count, record_size) = {
@@ -432,12 +476,22 @@ impl<W: MdfWrite> MdfWriter<W> {
             }
             buffer.extend_from_slice(&dt.record_buf);
             dt.record_count += 1;
+            records_written += 1;
         }
 
         if !buffer.is_empty() {
+            let buf_len = buffer.len() as u64;
             self.writer.write_all(&buffer)?;
-            self.offset += buffer.len() as u64;
+            self.offset += buf_len;
+            bytes_written += buf_len;
         }
+
+        // Track writes for streaming and check auto-flush
+        if records_written > 0 {
+            self.record_write(records_written, bytes_written);
+            self.maybe_auto_flush()?;
+        }
+
         Ok(())
     }
 

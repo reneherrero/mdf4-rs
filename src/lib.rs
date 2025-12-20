@@ -216,6 +216,8 @@ pub use error::{Error, Result};
 pub use types::DecodedValue;
 #[cfg(feature = "alloc")]
 pub use writer::MdfWriter;
+#[cfg(feature = "alloc")]
+pub use writer::{FlushPolicy, StreamingConfig};
 
 #[cfg(feature = "std")]
 pub use channel::Channel;
