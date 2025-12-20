@@ -10,12 +10,17 @@ use crate::{
 pub struct RawDataGroup {
     pub block: DataGroupBlock,
     pub channel_groups: Vec<RawChannelGroup>,
+    /// Whether this data group is from an unfinalized MDF file.
+    pub is_unfinalized: bool,
 }
 impl RawDataGroup {
     /// Collect all data blocks referenced by this data group.
     ///
     /// The returned vector contains the `DT` or `DV` blocks in the order they
     /// appear on disk, transparently following any `DL` list chains.
+    ///
+    /// For unfinalized MDF files, this will automatically use the correct
+    /// parsing method based on the `is_unfinalized` flag.
     ///
     /// # Arguments
     /// * `mmap` - Memory mapped file containing the MDF data
@@ -25,7 +30,7 @@ impl RawDataGroup {
     pub fn data_blocks<'a>(&self, mmap: &'a [u8]) -> Result<Vec<DataBlock<'a>>> {
         let mut collected_blocks = Vec::new();
 
-        // Start at the group’s primary data pointer
+        // Start at the group's primary data pointer
         let mut current_block_address = self.block.data_block_addr;
         while current_block_address != 0 {
             let byte_offset = current_block_address as usize;
@@ -35,10 +40,17 @@ impl RawDataGroup {
 
             match block_header.id.as_str() {
                 "##DT" | "##DV" => {
-                    // Single contiguous DataBlock
-                    let data_block = DataBlock::from_bytes(&mmap[byte_offset..])?;
+                    // Check if this is an empty block in an unfinalized file
+                    // (block_len == 24 means header only, but data follows anyway)
+                    let data_block = if self.is_unfinalized && block_header.block_len == 24 {
+                        // Use unfinalized parsing - read until end of file
+                        DataBlock::from_bytes_unfinalized(&mmap[byte_offset..])?
+                    } else {
+                        // Normal parsing
+                        DataBlock::from_bytes(&mmap[byte_offset..])?
+                    };
                     collected_blocks.push(data_block);
-                    // No list to follow, we’re done
+                    // No list to follow, we're done
                     current_block_address = 0;
                 }
                 "##DL" => {

@@ -137,7 +137,8 @@ impl IdentificationBlock {
         }
 
         let file_identifier = str::from_utf8(&bytes[0..8]).unwrap().to_string();
-        if file_identifier != "MDF     " {
+        // Accept both finalized ("MDF     ") and unfinalized ("UnFinMF ") files
+        if file_identifier != "MDF     " && file_identifier != "UnFinMF " {
             return Err(Error::FileIdentifierError(file_identifier));
         }
 

@@ -13,6 +13,8 @@ pub struct MdfFile {
     pub data_groups: Vec<RawDataGroup>,
     /// File data buffer. Stored to guarantee lifetime for slices used during parsing.
     pub mmap: Vec<u8>,
+    /// Whether this is an unfinalized MDF file (file_identifier == "UnFinMF ").
+    pub is_unfinalized: bool,
 }
 
 impl MdfFile {
@@ -57,6 +59,9 @@ impl MdfFile {
         // Parse Identification block (first 64 bytes) and Header block (next 104 bytes)
         let identification = IdentificationBlock::from_bytes(&data[0..64])?;
         let header = HeaderBlock::from_bytes(&data[64..64 + 104])?;
+
+        // Check if file is unfinalized
+        let is_unfinalized = identification.file_identifier.trim() == "UnFinMF";
 
         // Parse Data Groups, assume a linked list of data groups.
         let mut data_groups = Vec::new();
@@ -114,6 +119,7 @@ impl MdfFile {
             let dg = RawDataGroup {
                 block: data_group_block,
                 channel_groups: raw_channel_groups,
+                is_unfinalized,
             };
             data_groups.push(dg);
 
@@ -125,6 +131,7 @@ impl MdfFile {
             header,
             data_groups,
             mmap: data,
+            is_unfinalized,
         })
     }
 }

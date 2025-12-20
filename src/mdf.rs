@@ -22,6 +22,13 @@ impl MDF {
         Ok(MDF { raw })
     }
 
+    /// Access the raw parsed MDF file structure.
+    ///
+    /// Useful for debugging or advanced use cases.
+    pub fn raw(&self) -> &MdfFile {
+        &self.raw
+    }
+
     /// Retrieve channel groups contained in the file.
     ///
     /// Each [`ChannelGroup`] is created lazily and does not decode any samples.

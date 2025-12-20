@@ -13,64 +13,49 @@ fn test_data_path(filename: &str) -> String {
 }
 
 // ============================================================================
-// Tests for UnFinMF format files (expected to fail with appropriate error)
+// Tests for UnFinMF format files (now supported)
 // ============================================================================
 
 #[test]
-fn unfinmf_11bit_obd2_rejected() {
+fn unfinmf_11bit_obd2_loads() {
     let path = test_data_path("11-bit-obd2.MF4");
     let result = MDF::from_file(&path);
 
-    assert!(result.is_err(), "UnFinMF format should be rejected");
-    if let Err(Error::FileIdentifierError(id)) = result {
-        assert!(
-            id.starts_with("UnFinMF"),
-            "Error should mention UnFinMF format, got: {id}"
-        );
-    } else {
-        panic!(
-            "Expected FileIdentifierError for UnFinMF file, got: {:?}",
-            result
-        );
-    }
+    assert!(
+        result.is_ok(),
+        "UnFinMF 11-bit OBD2 file should load successfully"
+    );
+    let mdf = result.unwrap();
+    let groups = mdf.channel_groups();
+    assert!(!groups.is_empty(), "Should have at least one channel group");
 }
 
 #[test]
-fn unfinmf_29bit_obd2_rejected() {
+fn unfinmf_29bit_obd2_loads() {
     let path = test_data_path("29-bit-obd2.MF4");
     let result = MDF::from_file(&path);
 
-    assert!(result.is_err(), "UnFinMF format should be rejected");
-    if let Err(Error::FileIdentifierError(id)) = result {
-        assert!(
-            id.starts_with("UnFinMF"),
-            "Error should mention UnFinMF format, got: {id}"
-        );
-    } else {
-        panic!(
-            "Expected FileIdentifierError for UnFinMF file, got: {:?}",
-            result
-        );
-    }
+    assert!(
+        result.is_ok(),
+        "UnFinMF 29-bit OBD2 file should load successfully"
+    );
+    let mdf = result.unwrap();
+    let groups = mdf.channel_groups();
+    assert!(!groups.is_empty(), "Should have at least one channel group");
 }
 
 #[test]
-fn unfinmf_29bit_wwh_obd_rejected() {
+fn unfinmf_29bit_wwh_obd_loads() {
     let path = test_data_path("29-bit-wwh-obd.MF4");
     let result = MDF::from_file(&path);
 
-    assert!(result.is_err(), "UnFinMF format should be rejected");
-    if let Err(Error::FileIdentifierError(id)) = result {
-        assert!(
-            id.starts_with("UnFinMF"),
-            "Error should mention UnFinMF format, got: {id}"
-        );
-    } else {
-        panic!(
-            "Expected FileIdentifierError for UnFinMF file, got: {:?}",
-            result
-        );
-    }
+    assert!(
+        result.is_ok(),
+        "UnFinMF 29-bit WWH-OBD file should load successfully"
+    );
+    let mdf = result.unwrap();
+    let groups = mdf.channel_groups();
+    assert!(!groups.is_empty(), "Should have at least one channel group");
 }
 
 // ============================================================================

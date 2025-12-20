@@ -142,10 +142,93 @@ impl<'a> RawChannel {
         // Gather all DataBlock fragments (DT, DV or DZ):
         let blocks = data_group.data_blocks(mmap)?;
 
-        // Build a single iterator that:
-        //  - goes block by block
-        //  - trims any partial record at the end of each block
-        //  - yields & [u8] of length `record_size`
+        // When record_id_len > 0 and there are multiple channel groups,
+        // records of different types are mixed in the data block.
+        // We need to parse by record ID and filter for this channel group.
+        if record_id_len > 0 && data_group.channel_groups.len() > 1 {
+            // Build record size lookup from all channel groups
+            let mut record_sizes: std::collections::HashMap<u64, usize> =
+                std::collections::HashMap::new();
+            for cg in &data_group.channel_groups {
+                let cg_record_size = record_id_len
+                    + cg.block.samples_byte_nr as usize
+                    + cg.block.invalidation_bytes_nr as usize;
+                record_sizes.insert(cg.block.record_id, cg_record_size);
+            }
+
+            let target_record_id = channel_group.block.record_id;
+            let target_record_size = record_size;
+
+            // Collect matching records from all data blocks
+            let mut matching_records: Vec<&'a [u8]> = Vec::new();
+
+            for data_block in blocks {
+                let data = data_block.data;
+                let mut pos = 0;
+
+                while pos < data.len() {
+                    // Read record ID
+                    let rid = if record_id_len == 1 {
+                        if pos >= data.len() {
+                            break;
+                        }
+                        data[pos] as u64
+                    } else if record_id_len == 2 {
+                        if pos + 2 > data.len() {
+                            break;
+                        }
+                        u16::from_le_bytes([data[pos], data[pos + 1]]) as u64
+                    } else if record_id_len == 4 {
+                        if pos + 4 > data.len() {
+                            break;
+                        }
+                        u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                            as u64
+                    } else if record_id_len == 8 {
+                        if pos + 8 > data.len() {
+                            break;
+                        }
+                        u64::from_le_bytes([
+                            data[pos],
+                            data[pos + 1],
+                            data[pos + 2],
+                            data[pos + 3],
+                            data[pos + 4],
+                            data[pos + 5],
+                            data[pos + 6],
+                            data[pos + 7],
+                        ])
+                    } else {
+                        break;
+                    };
+
+                    // Get record size for this ID
+                    let rec_size = match record_sizes.get(&rid) {
+                        Some(&size) => size,
+                        None => {
+                            // Unknown record ID - try to resync by scanning for next valid ID
+                            pos += 1;
+                            continue;
+                        }
+                    };
+
+                    if pos + rec_size > data.len() {
+                        break;
+                    }
+
+                    // If this matches our target channel group, collect the record
+                    if rid == target_record_id {
+                        matching_records.push(&data[pos..pos + target_record_size]);
+                    }
+
+                    pos += rec_size;
+                }
+            }
+
+            return Ok(Box::new(matching_records.into_iter().map(Ok)));
+        }
+
+        // Simple case: no record IDs or single channel group - all records same size
         let iter = blocks.into_iter().flat_map(move |data_block| {
             // For DZBLOCK you already unzipped into DataBlock, so here data_block.data
             let raw = data_block.data;

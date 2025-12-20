@@ -33,6 +33,21 @@ impl<'a> BlockParse<'a> for DataBlock<'a> {
         Ok(Self { header, data })
     }
 }
+
+impl<'a> DataBlock<'a> {
+    /// Parse a DTBLOCK from an unfinalized MDF file.
+    ///
+    /// In unfinalized files, the block_len in the header may be incorrect (set to 24,
+    /// header only), but actual data continues until the end of the file.
+    /// This method reads all remaining bytes after the header as data.
+    pub fn from_bytes_unfinalized(bytes: &'a [u8]) -> Result<Self> {
+        let header = Self::parse_header(bytes)?;
+
+        // Use all bytes after the header as data
+        let data = &bytes[24..];
+        Ok(Self { header, data })
+    }
+}
 impl<'a> DataBlock<'a> {
     /// Iterate over raw records of fixed size.
     /// If the data block contains padding at the end, it’s your caller’s responsibility to trim that.
