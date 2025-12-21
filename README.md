@@ -18,7 +18,7 @@ A safe, efficient Rust library for reading and writing ASAM MDF 4 (Measurement D
 
 ```toml
 [dependencies]
-mdf4-rs = "0.1.0-alpha1"
+mdf4-rs = "0.1"
 ```
 
 ### Reading
@@ -60,6 +60,23 @@ let dbc = dbc_rs::Dbc::parse(dbc_content)?;
 let mut logger = CanDbcLogger::builder(&dbc).build()?;
 logger.log(0x100, timestamp_us, &frame_data);
 let mdf_bytes = logger.finalize()?;
+```
+
+## Feature Flags
+
+| Feature | Description | Default |
+|---------|-------------|---------|
+| `std` | Standard library with serde/serde_json | Yes |
+| `alloc` | Heap allocation | Via `std` |
+| `can` | CAN bus support via `embedded-can` | Yes |
+| `dbc` | DBC decoding via `dbc-rs` | Yes |
+| `serde` | Serialization support | Via `std` |
+
+### Minimal Configuration
+
+```toml
+[dependencies]
+mdf4-rs = { version = "0.1", default-features = false, features = ["alloc"] }
 ```
 
 ## Performance
