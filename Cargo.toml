@@ -1,6 +1,6 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.0-alpha.3"
+version = "0.1.0-rc.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["mdf4-rs contributors"]
@@ -23,21 +23,44 @@ can = ["dep:embedded-can"]
 dbc = ["dep:dbc-rs", "alloc"]
 
 [dependencies]
-serde = { version = "1.0", default-features = false, features = [
-    "derive",
-    "alloc",
-], optional = true }
-serde_json = { version = "1.0", optional = true }
-embedded-can = { version = "0.4", optional = true }
-dbc-rs = { version = "0.1.1", default-features = false, features = [
-    "alloc",
-], optional = true }
+
+[dependencies.serde]
+version = "1.0"
+default-features = false
+features = ["derive", "alloc"]
+optional = true
+
+[dependencies.serde_json]
+version = "1.0"
+optional = true
+
+[dependencies.embedded-can]
+version = "0.4"
+optional = true
+
+[dependencies.dbc-rs]
+version = "0.1.3"
+default-features = false
+features = ["alloc"]
+optional = true
+
 
 [dev-dependencies]
-criterion = "0.5"
-serde = { version = "1.0", features = ["derive"] }
-embedded-can = "0.4"
-dbc-rs = { version = "0.1.1", default-features = false, features = ["alloc"] }
+
+[dev-dependencies.criterion]
+version = "0.5"
+
+[dev-dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dev-dependencies.embedded-can]
+version = "0.4"
+
+[dev-dependencies.dbc-rs]
+version = "0.1.3"
+default-features = false
+features = ["alloc"]
 
 [[bench]]
 name = "index_benchmark"
