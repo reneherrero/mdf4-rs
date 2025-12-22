@@ -1,5 +1,7 @@
 # mdf4-rs
 
+> **⚠️ Work in Progress**: This project is under active development and not yet ready for production use.
+
 A safe, efficient Rust library for reading and writing ASAM MDF 4 (Measurement Data Format) files.
 
 [![Crates.io](https://img.shields.io/crates/v/mdf4-rs.svg)](https://crates.io/crates/mdf4-rs)

@@ -1,0 +1,68 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Unit Tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--all-features"
+                ],
+                "filter": {
+                    "name": "mdf4-rs",
+                    "kind": "lib"
+                }
+            },
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Integration Tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--all-features",
+                    "--test",
+                    "*"
+                ],
+                "filter": {
+                    "kind": "test"
+                }
+            },
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug Benchmark (index)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bench",
+                    "index_benchmark"
+                ],
+                "filter": {
+                    "name": "index_benchmark",
+                    "kind": "bench"
+                }
+            },
+            "args": ["--bench", "--profile-time", "5"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            }
+        }
+    ]
+}
