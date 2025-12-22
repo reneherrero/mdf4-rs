@@ -4,6 +4,7 @@ use crate::{
 };
 
 /// SDBLOCK: Signal Data Block (variable‐length signal values)
+#[derive(Debug, Clone)]
 pub struct SignalDataBlock<'a> {
     pub header: BlockHeader,
     /// The concatenated sequence of VLSD values:
@@ -17,7 +18,7 @@ impl<'a> BlockParse<'a> for SignalDataBlock<'a> {
         // 1) Parse the common 24-byte block header
         let header = Self::parse_header(bytes)?;
         // 2) Ensure we have the full SDBLOCK on‐disk
-        let expected_bytes = header.block_len as usize;
+        let expected_bytes = header.length as usize;
         if bytes.len() < expected_bytes {
             return Err(Error::TooShortBuffer {
                 actual: bytes.len(),

@@ -61,10 +61,6 @@ pub mod fd;
 mod raw_logger;
 mod timestamped_frame;
 
-pub use dbc_compat::{
-    MessageInfo, SignalInfo, extract_message_info, signal_to_bit_count, signal_to_conversion,
-    signal_to_conversion_with_range, signal_to_data_type, value_descriptions_to_mapping,
-};
 pub use dbc_logger::{CanDbcLogger, CanDbcLoggerBuilder, CanDbcLoggerConfig};
 #[cfg(feature = "std")]
 pub use dbc_overlay::{DbcOverlayReader, DecodedFrame, OverlayStatistics, SignalValue};

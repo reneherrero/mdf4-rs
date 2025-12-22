@@ -6,14 +6,14 @@ use crate::{
 use std::fs::File;
 use std::io::Read;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MdfFile {
     pub identification: IdentificationBlock,
     pub header: HeaderBlock,
     pub data_groups: Vec<RawDataGroup>,
     /// File data buffer. Stored to guarantee lifetime for slices used during parsing.
     pub mmap: Vec<u8>,
-    /// Whether this is an unfinalized MDF file (file_identifier == "UnFinMF ").
+    /// Whether this is an unfinalized MDF file (file_id == "UnFinMF ").
     pub is_unfinalized: bool,
 }
 
@@ -61,7 +61,7 @@ impl MdfFile {
         let header = HeaderBlock::from_bytes(&data[64..64 + 104])?;
 
         // Check if file is unfinalized
-        let is_unfinalized = identification.file_identifier.trim() == "UnFinMF";
+        let is_unfinalized = identification.file_id.trim() == "UnFinMF";
 
         // Parse Data Groups, assume a linked list of data groups.
         let mut data_groups = Vec::new();

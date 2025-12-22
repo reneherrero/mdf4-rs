@@ -6,7 +6,7 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawDataGroup {
     pub block: DataGroupBlock,
     pub channel_groups: Vec<RawChannelGroup>,
@@ -42,7 +42,7 @@ impl RawDataGroup {
                 "##DT" | "##DV" => {
                     // Check if this is an empty block in an unfinalized file
                     // (block_len == 24 means header only, but data follows anyway)
-                    let data_block = if self.is_unfinalized && block_header.block_len == 24 {
+                    let data_block = if self.is_unfinalized && block_header.length == 24 {
                         // Use unfinalized parsing - read until end of file
                         DataBlock::from_bytes_unfinalized(&mmap[byte_offset..])?
                     } else {
@@ -58,7 +58,7 @@ impl RawDataGroup {
                     let data_list_block = DataListBlock::from_bytes(&mmap[byte_offset..])?;
 
                     // Parse each fragment in this list
-                    for &fragment_address in &data_list_block.data_links {
+                    for &fragment_address in &data_list_block.data_block_addrs {
                         let fragment_offset = fragment_address as usize;
                         let fragment_block = DataBlock::from_bytes(&mmap[fragment_offset..])?;
 
@@ -66,7 +66,7 @@ impl RawDataGroup {
                     }
 
                     // Move to the next DLBLOCK in the chain (0 = end)
-                    current_block_address = data_list_block.next;
+                    current_block_address = data_list_block.next_dl_addr;
                 }
 
                 unexpected_id => {

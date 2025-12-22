@@ -1,144 +1,94 @@
+use super::DG_BLOCK_SIZE;
 use crate::{
-    Error, Result,
-    blocks::common::{BlockHeader, BlockParse},
+    Result,
+    blocks::common::{
+        BlockHeader, BlockParse, debug_assert_aligned, read_u8, read_u64, validate_block_id,
+        validate_block_length, validate_buffer_size,
+    },
 };
-use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 
-#[derive(Debug)]
+/// Data Group Block (##DG) - groups channel groups that share a data block.
+///
+/// A data group typically corresponds to one acquisition device. It contains
+/// links to channel groups and the actual measurement data block.
+#[derive(Debug, Clone)]
 pub struct DataGroupBlock {
-    pub header: BlockHeader, // Common header
+    pub header: BlockHeader,
+    /// Link to next data group block (0 if last).
     pub next_dg_addr: u64,
+    /// Link to first channel group block.
     pub first_cg_addr: u64,
+    /// Link to data block (DT, DZ, DL, HL, etc.).
     pub data_block_addr: u64,
+    /// Link to comment text/metadata block.
     pub comment_addr: u64,
-    pub record_id_len: u8,
-    pub reserved1: String,
+    /// Size of record ID in bytes (0, 1, 2, 4, or 8).
+    pub record_id_size: u8,
 }
 
 impl BlockParse<'_> for DataGroupBlock {
     const ID: &'static str = "##DG";
-    /// Parse a `DataGroupBlock` from a 64 byte slice.
-    ///
-    /// # Arguments
-    /// * `bytes` - Byte slice beginning at the DG block header.
-    ///
-    /// # Returns
-    /// The populated [`DataGroupBlock`] on success or an [`Error`] if the
-    /// slice is too small or malformed.
+
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
-
-        let expected_bytes = 64;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
+        validate_buffer_size(bytes, DG_BLOCK_SIZE)?;
 
         Ok(Self {
             header,
-            next_dg_addr: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            first_cg_addr: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            data_block_addr: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            comment_addr: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            record_id_len: bytes[56],
-            reserved1: String::from_utf8_lossy(&bytes[57..64]).to_string(),
+            // Links section (4 x u64 = 32 bytes at offset 24)
+            next_dg_addr: read_u64(bytes, 24),
+            first_cg_addr: read_u64(bytes, 32),
+            data_block_addr: read_u64(bytes, 40),
+            comment_addr: read_u64(bytes, 48),
+            // Data section at offset 56
+            record_id_size: read_u8(bytes, 56),
+            // bytes 57-64: reserved (skipped)
         })
     }
 }
 
 impl DataGroupBlock {
     /// Serializes the DataGroupBlock to bytes according to MDF 4.1 specification.
-    ///
-    /// # Structure (64 bytes total):
-    /// - BlockHeader (24 bytes): Standard block header with id="##DG"
-    /// - next_dg_addr (8 bytes): Link to next data group block
-    /// - first_cg_addr (8 bytes): Link to first channel group block
-    /// - data_block_addr (8 bytes): Link to the data block
-    /// - comment_addr (8 bytes): Link to comment text block
-    /// - record_id_len (1 byte): Record ID length
-    /// - reserved1 (7 bytes): Reserved space
-    ///
-    /// # Returns
-    /// - `Ok(Vec<u8>)` containing the serialized data group block
-    /// - `Err(MdfError)` if serialization fails
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        // Validate the header before serializing
-        if self.header.id != "##DG" {
-            return Err(Error::BlockSerializationError(format!(
-                "DataGroupBlock must have ID '##DG', found '{}'",
-                self.header.id
-            )));
-        }
+        validate_block_id(&self.header, "##DG")?;
+        validate_block_length(&self.header, DG_BLOCK_SIZE as u64)?;
 
-        if self.header.block_len != 64 {
-            return Err(Error::BlockSerializationError(format!(
-                "DataGroupBlock must have block_len=64, found {}",
-                self.header.block_len
-            )));
-        }
+        let mut buffer = Vec::with_capacity(DG_BLOCK_SIZE);
 
-        // Create a buffer with exact capacity for efficiency
-        let mut buffer = Vec::with_capacity(64);
-
-        // 1. Write the block header (24 bytes)
+        // Header (24 bytes)
         buffer.extend_from_slice(&self.header.to_bytes()?);
 
-        // 2. Write the link addresses (32 bytes total)
+        // Links (32 bytes)
         buffer.extend_from_slice(&self.next_dg_addr.to_le_bytes());
         buffer.extend_from_slice(&self.first_cg_addr.to_le_bytes());
         buffer.extend_from_slice(&self.data_block_addr.to_le_bytes());
         buffer.extend_from_slice(&self.comment_addr.to_le_bytes());
 
-        // 3. Write record ID length (1 byte)
-        buffer.push(self.record_id_len);
+        // Data section (8 bytes)
+        buffer.push(self.record_id_size);
+        buffer.extend_from_slice(&[0u8; 7]); // reserved
 
-        // 4. Write reserved space (7 bytes)
-        // The reserved field is stored as a String for reading, but for writing
-        // we just write 7 bytes of zeros as per spec
-        buffer.extend_from_slice(&[0u8; 7]);
-
-        // Verify the buffer is exactly 64 bytes
-        if buffer.len() != 64 {
-            return Err(Error::BlockSerializationError(format!(
-                "DataGroupBlock must be exactly 64 bytes, got {}",
-                buffer.len()
-            )));
-        }
-
-        // Ensure 8-byte alignment (should always be true since 64 is divisible by 8)
-        debug_assert_eq!(
-            buffer.len() % 8,
-            0,
-            "DataGroupBlock size is not 8-byte aligned"
-        );
-
+        debug_assert_aligned(buffer.len());
         Ok(buffer)
     }
 }
 
 impl Default for DataGroupBlock {
     fn default() -> Self {
-        let header = BlockHeader {
-            id: String::from("##DG"),
-            reserved0: 0,
-            block_len: 64,
-            links_nr: 4,
-        };
-
-        DataGroupBlock {
-            header,
+        Self {
+            header: BlockHeader {
+                id: String::from("##DG"),
+                reserved: 0,
+                length: DG_BLOCK_SIZE as u64,
+                link_count: 4,
+            },
             next_dg_addr: 0,
             first_cg_addr: 0,
             data_block_addr: 0,
             comment_addr: 0,
-            record_id_len: 0,
-            reserved1: String::new(),
+            record_id_size: 0,
         }
     }
 }

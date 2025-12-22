@@ -1,183 +1,162 @@
 use crate::{
     Error, Result,
-    blocks::common::{BlockHeader, BlockParse},
+    blocks::common::{
+        BlockHeader, BlockParse, debug_assert_aligned, read_u8, read_u32, read_u64,
+        validate_block_id, validate_buffer_size,
+    },
 };
 use alloc::format;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-/// DLBLOCK: Data List Block (ordered list of data blocks for signal/reduction)
+/// Data List Block (##DL) - ordered list of data blocks.
+///
+/// A data list block provides a way to split large data into multiple fragments.
+/// It contains links to data blocks (DT, DZ, etc.) and optional offset information.
+#[derive(Debug, Clone)]
 pub struct DataListBlock {
     pub header: BlockHeader,
-    pub next: u64,            // link to next DLBLOCK
-    pub data_links: Vec<u64>, // list of offsets to DT/RD/DV/RV/SDBLOCKs
+    /// Link to next data list block (0 if last).
+    pub next_dl_addr: u64,
+    /// Links to data block fragments (DT, DZ, DV, RV, etc.).
+    pub data_block_addrs: Vec<u64>,
+    /// Flags (bit 0: equal length blocks).
     pub flags: u8,
-    pub reserved1: [u8; 3],
-    pub data_block_nr: u32,
-    pub data_block_len: Option<u64>,
-    pub offsets: Option<Vec<u64>>,
+    /// Number of data blocks referenced.
+    pub data_block_count: u32,
+    /// Length of each data block (only if flags bit 0 is set).
+    pub equal_length: Option<u64>,
+    /// Cumulative byte offsets for each block (only if flags bit 0 is NOT set).
+    pub block_offsets: Option<Vec<u64>>,
 }
 
 impl BlockParse<'_> for DataListBlock {
     const ID: &'static str = "##DL";
-    /// Parse a DLBLOCK from raw bytes.
-    ///
-    /// The DLBLOCK contains a list of links to data fragments. This function
-    /// validates the minimum size based on the number of links declared in the
-    /// header and reads all additional fields.
+
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
 
-        let min_len = 24 + (header.links_nr as usize * 8) + 1 + 3 + 4;
-        if bytes.len() < min_len {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: min_len,
-                file: file!(),
-                line: line!(),
-            });
-        }
-        // Parse links: first is 'next', then data links
-        let mut off = 24;
-        let next = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
-        off += 8;
+        let link_count = header.link_count as usize;
+        let min_len = 24 + (link_count * 8) + 8; // header + links + data section minimum
+        validate_buffer_size(bytes, min_len)?;
 
-        // Remaining links all point to data blocks
-        let link_count = header.links_nr as usize;
-        let mut data_links = Vec::with_capacity(link_count - 1);
-        for _ in 1..link_count {
-            let l = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
-            data_links.push(l);
-            off += 8;
-        }
-        let flags = bytes[off];
-        off += 1;
-        let reserved1 = [bytes[off], bytes[off + 1], bytes[off + 2]];
-        off += 3;
-        let data_block_nr = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
-        off += 4;
+        // Parse links: first is 'next', then data block addresses
+        let next_dl_addr = read_u64(bytes, 24);
 
-        let (data_block_len, offsets) = if flags & 1 != 0 {
-            if bytes.len() < off + 8 {
-                return Err(Error::TooShortBuffer {
-                    actual: bytes.len(),
-                    expected: off + 8,
-                    file: file!(),
-                    line: line!(),
-                });
-            }
-            let len = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
+        let mut data_block_addrs = Vec::with_capacity(link_count.saturating_sub(1));
+        for i in 1..link_count {
+            data_block_addrs.push(read_u64(bytes, 24 + i * 8));
+        }
+
+        let data_offset = 24 + link_count * 8;
+        let flags = read_u8(bytes, data_offset);
+        // bytes [data_offset+1..data_offset+4] are reserved
+        let data_block_count = read_u32(bytes, data_offset + 4);
+
+        let (equal_length, block_offsets) = if flags & 1 != 0 {
+            // Equal length mode
+            validate_buffer_size(bytes, data_offset + 16)?;
+            let len = read_u64(bytes, data_offset + 8);
             (Some(len), None)
         } else {
-            let mut offs = Vec::with_capacity(data_block_nr as usize);
-            if bytes.len() < off + (data_block_nr as usize * 8) {
-                return Err(Error::TooShortBuffer {
-                    actual: bytes.len(),
-                    expected: off + data_block_nr as usize * 8,
-                    file: file!(),
-                    line: line!(),
-                });
+            // Variable length mode with offsets
+            let offsets_start = data_offset + 8;
+            let offsets_len = data_block_count as usize * 8;
+            validate_buffer_size(bytes, offsets_start + offsets_len)?;
+
+            let mut offsets = Vec::with_capacity(data_block_count as usize);
+            for i in 0..data_block_count as usize {
+                offsets.push(read_u64(bytes, offsets_start + i * 8));
             }
-            for _ in 0..data_block_nr {
-                let o = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
-                offs.push(o);
-                off += 8;
-            }
-            (None, Some(offs))
+            (None, Some(offsets))
         };
 
-        Ok(DataListBlock {
+        Ok(Self {
             header,
-            next,
-            data_links,
+            next_dl_addr,
+            data_block_addrs,
             flags,
-            reserved1,
-            data_block_nr,
-            data_block_len,
-            offsets,
+            data_block_count,
+            equal_length,
+            block_offsets,
         })
     }
 }
 
 impl DataListBlock {
-    /// Create a new `DataListBlock` for equal-length data blocks.
+    /// Creates a new DataListBlock for equal-length data blocks.
     ///
-    /// # Arguments
-    /// * `data_links` - Addresses of all data blocks referenced by this list.
-    /// * `data_block_len` - Length in bytes of every referenced data block.
-    ///
-    /// # Returns
-    /// A [`DataListBlock`] ready for serialization.
-    pub fn new_equal(data_links: Vec<u64>, data_block_len: u64) -> Self {
-        let links_nr = data_links.len() as u64 + 1; // +1 for 'next'
-        let block_len = 24 + links_nr * 8 + 1 + 3 + 4 + 8;
-        let header = BlockHeader {
-            id: "##DL".to_string(),
-            reserved0: 0,
-            block_len,
-            links_nr,
-        };
+    /// Use this when all referenced data blocks have the same size.
+    pub fn new_equal_length(data_block_addrs: Vec<u64>, block_length: u64) -> Self {
+        let link_count = data_block_addrs.len() as u64 + 1; // +1 for 'next'
+        let length = 24 + link_count * 8 + 16; // header + links + data section
+
         Self {
-            header,
-            next: 0,
-            data_links,
-            flags: 1,
-            reserved1: [0; 3],
-            data_block_nr: links_nr as u32 - 1,
-            data_block_len: Some(data_block_len),
-            offsets: None,
+            header: BlockHeader {
+                id: "##DL".to_string(),
+                reserved: 0,
+                length,
+                link_count,
+            },
+            next_dl_addr: 0,
+            data_block_count: data_block_addrs.len() as u32,
+            data_block_addrs,
+            flags: 1, // Equal length flag
+            equal_length: Some(block_length),
+            block_offsets: None,
         }
     }
 
-    /// Serialize this DLBLOCK to bytes.
-    ///
-    /// # Returns
-    /// The binary representation of the block or an [`Error`] on failure.
+    /// Serializes the DataListBlock to bytes according to MDF 4.1 specification.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        if self.header.id != "##DL" {
-            return Err(Error::BlockSerializationError(format!(
-                "DataListBlock must have ID '##DL', found '{}'",
-                self.header.id
-            )));
-        }
+        validate_block_id(&self.header, "##DL")?;
 
-        let links_nr = self.data_links.len() as u64 + 1;
-        let extra = if self.flags & 1 != 0 {
-            1 + 3 + 4 + 8
+        let link_count = self.data_block_addrs.len() as u64 + 1;
+        let data_section_size = if self.flags & 1 != 0 {
+            16 // flags(1) + reserved(3) + count(4) + length(8)
         } else {
-            1 + 3 + 4 + (self.data_block_nr as usize * 8)
+            8 + (self.data_block_count as usize * 8) // flags(1) + reserved(3) + count(4) + offsets
         };
-        let block_len = 24 + links_nr * 8 + extra as u64;
+        let expected_length = 24 + link_count * 8 + data_section_size as u64;
 
-        if self.header.links_nr != links_nr {
+        if self.header.link_count != link_count {
             return Err(Error::BlockSerializationError(format!(
-                "DataListBlock links_nr mismatch: header {} vs actual {}",
-                self.header.links_nr, links_nr
+                "DataListBlock link_count mismatch: header {} vs actual {}",
+                self.header.link_count, link_count
             )));
         }
-        if self.header.block_len != block_len {
+        if self.header.length != expected_length {
             return Err(Error::BlockSerializationError(format!(
-                "DataListBlock block_len mismatch: header {} vs actual {}",
-                self.header.block_len, block_len
+                "DataListBlock length mismatch: header {} vs actual {}",
+                self.header.length, expected_length
             )));
         }
 
-        let mut buf = Vec::with_capacity(block_len as usize);
-        buf.extend_from_slice(&self.header.to_bytes()?);
-        buf.extend_from_slice(&self.next.to_le_bytes());
-        for link in &self.data_links {
-            buf.extend_from_slice(&link.to_le_bytes());
+        let mut buffer = Vec::with_capacity(expected_length as usize);
+
+        // Header
+        buffer.extend_from_slice(&self.header.to_bytes()?);
+
+        // Links
+        buffer.extend_from_slice(&self.next_dl_addr.to_le_bytes());
+        for addr in &self.data_block_addrs {
+            buffer.extend_from_slice(&addr.to_le_bytes());
         }
-        buf.push(self.flags);
-        buf.extend_from_slice(&self.reserved1);
-        buf.extend_from_slice(&self.data_block_nr.to_le_bytes());
+
+        // Data section
+        buffer.push(self.flags);
+        buffer.extend_from_slice(&[0u8; 3]); // reserved
+        buffer.extend_from_slice(&self.data_block_count.to_le_bytes());
+
         if self.flags & 1 != 0 {
-            buf.extend_from_slice(&self.data_block_len.unwrap_or(0).to_le_bytes());
-        } else if let Some(offsets) = &self.offsets {
-            for o in offsets {
-                buf.extend_from_slice(&o.to_le_bytes());
+            buffer.extend_from_slice(&self.equal_length.unwrap_or(0).to_le_bytes());
+        } else if let Some(offsets) = &self.block_offsets {
+            for offset in offsets {
+                buffer.extend_from_slice(&offset.to_le_bytes());
             }
         }
-        Ok(buf)
+
+        debug_assert_aligned(buffer.len());
+        Ok(buffer)
     }
 }

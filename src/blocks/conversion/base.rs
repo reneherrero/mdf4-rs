@@ -1,5 +1,5 @@
 use super::types::ConversionType;
-use crate::blocks::common::{BlockHeader, BlockParse};
+use crate::blocks::common::{BlockHeader, BlockParse, read_u8, read_u16, validate_buffer_size};
 use crate::{Error, Result};
 
 use alloc::boxed::Box;
@@ -18,41 +18,41 @@ pub struct ConversionBlock {
     pub header: BlockHeader,
 
     // Link section
-    pub cc_tx_name: Option<u64>,
-    pub cc_md_unit: Option<u64>,
-    pub cc_md_comment: Option<u64>,
-    pub cc_cc_inverse: Option<u64>,
-    pub cc_ref: Vec<u64>,
+    pub name_addr: Option<u64>,
+    pub unit_addr: Option<u64>,
+    pub comment_addr: Option<u64>,
+    pub inverse_addr: Option<u64>,
+    pub refs: Vec<u64>,
 
     // Data
-    pub cc_type: ConversionType,
-    pub cc_precision: u8,
-    pub cc_flags: u16,
-    pub cc_ref_count: u16,
-    pub cc_val_count: u16,
-    pub cc_phy_range_min: Option<f64>,
-    pub cc_phy_range_max: Option<f64>,
-    pub cc_val: Vec<f64>,
+    pub conversion_type: ConversionType,
+    pub precision: u8,
+    pub flags: u16,
+    pub ref_count: u16,
+    pub value_count: u16,
+    pub phys_range_min: Option<f64>,
+    pub phys_range_max: Option<f64>,
+    pub values: Vec<f64>,
 
     pub formula: Option<String>,
 
     // Resolved data for self-contained conversions (populated during index creation)
     /// Pre-resolved text strings for text-based conversions (ValueToText, RangeToText, etc.)
-    /// Maps cc_ref indices to their resolved text content
+    /// Maps refs indices to their resolved text content
     #[cfg(feature = "std")]
     pub resolved_texts: Option<BTreeMap<usize, String>>,
     #[cfg(not(feature = "std"))]
     pub resolved_texts: Option<()>,
 
     /// Pre-resolved nested conversion blocks for chained conversions
-    /// Maps cc_ref indices to their resolved ConversionBlock content
+    /// Maps refs indices to their resolved ConversionBlock content
     #[cfg(feature = "std")]
     pub resolved_conversions: Option<BTreeMap<usize, Box<ConversionBlock>>>,
     #[cfg(not(feature = "std"))]
     pub resolved_conversions: Option<()>,
 
     /// Default conversion for fallback cases (similar to asammdf's "default_addr")
-    /// This is typically the last reference in cc_ref for some conversion types
+    /// This is typically the last reference in refs for some conversion types
     pub default_conversion: Option<Box<ConversionBlock>>,
 }
 
@@ -64,74 +64,74 @@ impl BlockParse<'_> for ConversionBlock {
         let mut offset = 24;
 
         // Fixed links
-        let cc_tx_name = read_link(bytes, &mut offset);
-        let cc_md_unit = read_link(bytes, &mut offset);
-        let cc_md_comment = read_link(bytes, &mut offset);
-        let cc_cc_inverse = read_link(bytes, &mut offset);
+        let name_addr = read_link(bytes, &mut offset);
+        let unit_addr = read_link(bytes, &mut offset);
+        let comment_addr = read_link(bytes, &mut offset);
+        let inverse_addr = read_link(bytes, &mut offset);
 
         let fixed_links = 4;
-        let additional_links = header.links_nr.saturating_sub(fixed_links);
-        let mut cc_ref = Vec::with_capacity(additional_links as usize);
+        let additional_links = header.link_count.saturating_sub(fixed_links);
+        let mut refs = Vec::with_capacity(additional_links as usize);
         for _ in 0..additional_links {
-            cc_ref.push(read_u64(bytes, &mut offset)?);
+            refs.push(read_u64_checked(bytes, &mut offset)?);
         }
 
         // Basic fields
-        let cc_type = ConversionType::from_u8(bytes[offset]);
+        let conversion_type = ConversionType::from_u8(read_u8(bytes, offset));
         offset += 1;
-        let cc_precision = bytes[offset];
+        let precision = read_u8(bytes, offset);
         offset += 1;
-        let cc_flags = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap());
+        let flags = read_u16(bytes, offset);
         offset += 2;
-        let cc_ref_count = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap());
+        let ref_count = read_u16(bytes, offset);
         offset += 2;
-        let cc_val_count = u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap());
+        let value_count = read_u16(bytes, offset);
         offset += 2;
 
         // IMPORTANT: Some vendors (like dSPACE) always write the physical range fields
-        // even when cc_flags bit 1 is not set. We need to detect this by checking if
+        // even when flags bit 1 is not set. We need to detect this by checking if
         // there's enough data in the block for the range fields.
         // Calculate expected sizes:
         let size_without_range =
-            24 + (header.links_nr as usize * 8) + 8 + (cc_val_count as usize * 8);
+            24 + (header.link_count as usize * 8) + 8 + (value_count as usize * 8);
         let size_with_range = size_without_range + 16;
-        let has_range_data = header.block_len as usize >= size_with_range;
+        let has_range_data = header.length as usize >= size_with_range;
 
-        let cc_phy_range_min = if has_range_data {
-            let val = f64::from_bits(read_u64(bytes, &mut offset)?);
+        let phys_range_min = if has_range_data {
+            let val = f64::from_bits(read_u64_checked(bytes, &mut offset)?);
             Some(val)
         } else {
             None
         };
 
-        let cc_phy_range_max = if has_range_data {
-            let val = f64::from_bits(read_u64(bytes, &mut offset)?);
+        let phys_range_max = if has_range_data {
+            let val = f64::from_bits(read_u64_checked(bytes, &mut offset)?);
             Some(val)
         } else {
             None
         };
 
-        let mut cc_val = Vec::with_capacity(cc_val_count as usize);
-        for _ in 0..cc_val_count {
-            let val = f64::from_bits(read_u64(bytes, &mut offset)?);
-            cc_val.push(val);
+        let mut values = Vec::with_capacity(value_count as usize);
+        for _ in 0..value_count {
+            let val = f64::from_bits(read_u64_checked(bytes, &mut offset)?);
+            values.push(val);
         }
 
         Ok(Self {
             header,
-            cc_tx_name,
-            cc_md_unit,
-            cc_md_comment,
-            cc_cc_inverse,
-            cc_ref,
-            cc_type,
-            cc_precision,
-            cc_flags,
-            cc_ref_count,
-            cc_val_count,
-            cc_phy_range_min,
-            cc_phy_range_max,
-            cc_val,
+            name_addr,
+            unit_addr,
+            comment_addr,
+            inverse_addr,
+            refs,
+            conversion_type,
+            precision,
+            flags,
+            ref_count,
+            value_count,
+            phys_range_min,
+            phys_range_max,
+            values,
             formula: None,
             resolved_texts: None,
             resolved_conversions: None,
@@ -140,22 +140,35 @@ impl BlockParse<'_> for ConversionBlock {
     }
 }
 
+/// Read an optional link from bytes, advancing the offset.
 fn read_link(bytes: &[u8], offset: &mut usize) -> Option<u64> {
-    let link = u64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap());
+    let link = u64::from_le_bytes([
+        bytes[*offset],
+        bytes[*offset + 1],
+        bytes[*offset + 2],
+        bytes[*offset + 3],
+        bytes[*offset + 4],
+        bytes[*offset + 5],
+        bytes[*offset + 6],
+        bytes[*offset + 7],
+    ]);
     *offset += 8;
     if link == 0 { None } else { Some(link) }
 }
 
-fn read_u64(bytes: &[u8], offset: &mut usize) -> Result<u64> {
-    if bytes.len() < *offset + 8 {
-        return Err(Error::TooShortBuffer {
-            actual: bytes.len(),
-            expected: *offset + 8,
-            file: file!(),
-            line: line!(),
-        });
-    }
-    let val = u64::from_le_bytes(bytes[*offset..*offset + 8].try_into().unwrap());
+/// Read a u64 from bytes, advancing the offset and validating bounds.
+fn read_u64_checked(bytes: &[u8], offset: &mut usize) -> Result<u64> {
+    validate_buffer_size(bytes, *offset + 8)?;
+    let val = u64::from_le_bytes([
+        bytes[*offset],
+        bytes[*offset + 1],
+        bytes[*offset + 2],
+        bytes[*offset + 3],
+        bytes[*offset + 4],
+        bytes[*offset + 5],
+        bytes[*offset + 6],
+        bytes[*offset + 7],
+    ]);
     *offset += 8;
     Ok(val)
 }
@@ -231,21 +244,21 @@ impl ConversionBlock {
 
         // Re-enable default conversion logic for specific types that need it
         let has_default_conversion = matches!(
-            self.cc_type,
+            self.conversion_type,
             crate::blocks::conversion::types::ConversionType::RangeToText // Add other types here as needed based on MDF specification
         );
 
         // For some conversion types, the last reference might be the default conversion
-        let default_ref_index = if has_default_conversion && self.cc_ref.len() > 2 {
+        let default_ref_index = if has_default_conversion && self.refs.len() > 2 {
             // Only treat as default if there are more than 2 references
             // This avoids incorrectly treating simple cases as having defaults
-            Some(self.cc_ref.len() - 1)
+            Some(self.refs.len() - 1)
         } else {
             None
         };
 
-        // Resolve each reference in cc_ref
-        for (i, &link_addr) in self.cc_ref.iter().enumerate() {
+        // Resolve each reference in refs
+        for (i, &link_addr) in self.refs.iter().enumerate() {
             // Skip null links (address 0 typically means null in MDF format)
             if link_addr == 0 {
                 continue; // Skip null links
@@ -312,14 +325,14 @@ impl ConversionBlock {
         Ok(())
     }
 
-    /// Get a resolved text string for a given cc_ref index.
+    /// Get a resolved text string for a given refs index.
     /// Returns the text if it was resolved during dependency resolution.
     #[cfg(feature = "std")]
     pub fn get_resolved_text(&self, ref_index: usize) -> Option<&String> {
         self.resolved_texts.as_ref()?.get(&ref_index)
     }
 
-    /// Get a resolved nested conversion for a given cc_ref index.
+    /// Get a resolved nested conversion for a given refs index.
     /// Returns the conversion block if it was resolved during dependency resolution.
     #[cfg(feature = "std")]
     pub fn get_resolved_conversion(&self, ref_index: usize) -> Option<&ConversionBlock> {
@@ -341,43 +354,43 @@ impl ConversionBlock {
     /// A byte vector containing the encoded block or an [`Error`] if
     /// serialization fails.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let links = 4 + self.cc_ref.len();
+        let links = 4 + self.refs.len();
 
         let mut header = self.header.clone();
-        header.links_nr = links as u64;
+        header.link_count = links as u64;
 
         let mut size = 24 + links * 8 + 1 + 1 + 2 + 2 + 2;
         // Include range fields if they exist (regardless of flag)
-        if self.cc_phy_range_min.is_some() || self.cc_phy_range_max.is_some() {
+        if self.phys_range_min.is_some() || self.phys_range_max.is_some() {
             size += 16;
         }
-        size += self.cc_val.len() * 8;
-        header.block_len = size as u64;
+        size += self.values.len() * 8;
+        header.length = size as u64;
 
         let mut buf = Vec::with_capacity(size);
         buf.extend_from_slice(&header.to_bytes()?);
         for link in [
-            self.cc_tx_name,
-            self.cc_md_unit,
-            self.cc_md_comment,
-            self.cc_cc_inverse,
+            self.name_addr,
+            self.unit_addr,
+            self.comment_addr,
+            self.inverse_addr,
         ] {
             buf.extend_from_slice(&link.unwrap_or(0).to_le_bytes());
         }
-        for l in &self.cc_ref {
+        for l in &self.refs {
             buf.extend_from_slice(&l.to_le_bytes());
         }
-        buf.push(self.cc_type.to_u8());
-        buf.push(self.cc_precision);
-        buf.extend_from_slice(&self.cc_flags.to_le_bytes());
-        buf.extend_from_slice(&(self.cc_ref_count).to_le_bytes());
-        buf.extend_from_slice(&(self.cc_val_count).to_le_bytes());
+        buf.push(self.conversion_type.to_u8());
+        buf.push(self.precision);
+        buf.extend_from_slice(&self.flags.to_le_bytes());
+        buf.extend_from_slice(&(self.ref_count).to_le_bytes());
+        buf.extend_from_slice(&(self.value_count).to_le_bytes());
         // Write range fields if they exist (regardless of flag, for vendor compatibility)
-        if self.cc_phy_range_min.is_some() || self.cc_phy_range_max.is_some() {
-            buf.extend_from_slice(&self.cc_phy_range_min.unwrap_or(0.0).to_le_bytes());
-            buf.extend_from_slice(&self.cc_phy_range_max.unwrap_or(0.0).to_le_bytes());
+        if self.phys_range_min.is_some() || self.phys_range_max.is_some() {
+            buf.extend_from_slice(&self.phys_range_min.unwrap_or(0.0).to_le_bytes());
+            buf.extend_from_slice(&self.phys_range_max.unwrap_or(0.0).to_le_bytes());
         }
-        for v in &self.cc_val {
+        for v in &self.values {
             buf.extend_from_slice(&v.to_le_bytes());
         }
         if buf.len() != size {
@@ -404,23 +417,23 @@ impl ConversionBlock {
         Self {
             header: BlockHeader {
                 id: String::from("##CC"),
-                reserved0: 0,
-                block_len: 0, // Will be calculated during to_bytes()
-                links_nr: 4,
+                reserved: 0,
+                length: 0, // Will be calculated during to_bytes()
+                link_count: 4,
             },
-            cc_tx_name: None,
-            cc_md_unit: None,
-            cc_md_comment: None,
-            cc_cc_inverse: None,
-            cc_ref: Vec::new(),
-            cc_type: ConversionType::Identity,
-            cc_precision: 0,
-            cc_flags: 0,
-            cc_ref_count: 0,
-            cc_val_count: 0,
-            cc_phy_range_min: None,
-            cc_phy_range_max: None,
-            cc_val: Vec::new(),
+            name_addr: None,
+            unit_addr: None,
+            comment_addr: None,
+            inverse_addr: None,
+            refs: Vec::new(),
+            conversion_type: ConversionType::Identity,
+            precision: 0,
+            flags: 0,
+            ref_count: 0,
+            value_count: 0,
+            phys_range_min: None,
+            phys_range_max: None,
+            values: Vec::new(),
             formula: None,
             resolved_texts: None,
             resolved_conversions: None,
@@ -452,23 +465,23 @@ impl ConversionBlock {
         Self {
             header: BlockHeader {
                 id: String::from("##CC"),
-                reserved0: 0,
-                block_len: 0, // Will be calculated during to_bytes()
-                links_nr: 4,
+                reserved: 0,
+                length: 0, // Will be calculated during to_bytes()
+                link_count: 4,
             },
-            cc_tx_name: None,
-            cc_md_unit: None,
-            cc_md_comment: None,
-            cc_cc_inverse: None,
-            cc_ref: Vec::new(),
-            cc_type: ConversionType::Linear,
-            cc_precision: 0,
-            cc_flags: 0,
-            cc_ref_count: 0,
-            cc_val_count: 2,
-            cc_phy_range_min: None,
-            cc_phy_range_max: None,
-            cc_val: alloc::vec![offset, factor],
+            name_addr: None,
+            unit_addr: None,
+            comment_addr: None,
+            inverse_addr: None,
+            refs: Vec::new(),
+            conversion_type: ConversionType::Linear,
+            precision: 0,
+            flags: 0,
+            ref_count: 0,
+            value_count: 2,
+            phys_range_min: None,
+            phys_range_max: None,
+            values: alloc::vec![offset, factor],
             formula: None,
             resolved_texts: None,
             resolved_conversions: None,
@@ -499,23 +512,23 @@ impl ConversionBlock {
         Self {
             header: BlockHeader {
                 id: String::from("##CC"),
-                reserved0: 0,
-                block_len: 0,
-                links_nr: 4,
+                reserved: 0,
+                length: 0,
+                link_count: 4,
             },
-            cc_tx_name: None,
-            cc_md_unit: None,
-            cc_md_comment: None,
-            cc_cc_inverse: None,
-            cc_ref: Vec::new(),
-            cc_type: ConversionType::Rational,
-            cc_precision: 0,
-            cc_flags: 0,
-            cc_ref_count: 0,
-            cc_val_count: 6,
-            cc_phy_range_min: None,
-            cc_phy_range_max: None,
-            cc_val: alloc::vec![p1, p2, p3, p4, p5, p6],
+            name_addr: None,
+            unit_addr: None,
+            comment_addr: None,
+            inverse_addr: None,
+            refs: Vec::new(),
+            conversion_type: ConversionType::Rational,
+            precision: 0,
+            flags: 0,
+            ref_count: 0,
+            value_count: 6,
+            phys_range_min: None,
+            phys_range_max: None,
+            values: alloc::vec![p1, p2, p3, p4, p5, p6],
             formula: None,
             resolved_texts: None,
             resolved_conversions: None,
@@ -529,10 +542,10 @@ impl ConversionBlock {
     /// - The conversion type is Identity, OR
     /// - The conversion type is Linear with offset=0 and factor=1
     pub fn is_identity(&self) -> bool {
-        match self.cc_type {
+        match self.conversion_type {
             ConversionType::Identity => true,
             ConversionType::Linear => {
-                self.cc_val.len() >= 2 && self.cc_val[0] == 0.0 && self.cc_val[1] == 1.0
+                self.values.len() >= 2 && self.values[0] == 0.0 && self.values[1] == 1.0
             }
             _ => false,
         }
@@ -544,9 +557,9 @@ impl ConversionBlock {
     /// * `min` - Minimum physical value
     /// * `max` - Maximum physical value
     pub fn with_physical_range(mut self, min: f64, max: f64) -> Self {
-        self.cc_phy_range_min = Some(min);
-        self.cc_phy_range_max = Some(max);
-        self.cc_flags |= 0b10; // Set physical range valid flag
+        self.phys_range_min = Some(min);
+        self.phys_range_max = Some(max);
+        self.flags |= 0b10; // Set physical range valid flag
         self
     }
 }

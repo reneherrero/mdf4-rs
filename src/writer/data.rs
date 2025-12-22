@@ -91,9 +91,9 @@ impl<W: MdfWrite> MdfWriter<W> {
 
         let header = BlockHeader {
             id: "##DT".to_string(),
-            reserved0: 0,
-            block_len: 24,
-            links_nr: 0,
+            reserved: 0,
+            length: 24,
+            link_count: 0,
         };
         let header_bytes = header.to_bytes()?;
         let dt_id = format!("dt_{}", self.dt_counter);
@@ -211,9 +211,9 @@ impl<W: MdfWrite> MdfWriter<W> {
             }
             let header = BlockHeader {
                 id: "##DT".to_string(),
-                reserved0: 0,
-                block_len: 24,
-                links_nr: 0,
+                reserved: 0,
+                length: 24,
+                link_count: 0,
             };
             let header_bytes = header.to_bytes()?;
             let new_dt_id = format!("dt_{}", self.dt_counter);
@@ -348,9 +348,9 @@ impl<W: MdfWrite> MdfWriter<W> {
                 }
                 let header = BlockHeader {
                     id: "##DT".to_string(),
-                    reserved0: 0,
-                    block_len: 24,
-                    links_nr: 0,
+                    reserved: 0,
+                    length: 24,
+                    link_count: 0,
                 };
                 let header_bytes = header.to_bytes()?;
                 let new_dt_id = format!("dt_{}", self.dt_counter);
@@ -452,9 +452,9 @@ impl<W: MdfWrite> MdfWriter<W> {
                 }
                 let header = BlockHeader {
                     id: "##DT".to_string(),
-                    reserved0: 0,
-                    block_len: 24,
-                    links_nr: 0,
+                    reserved: 0,
+                    length: 24,
+                    link_count: 0,
                 };
                 let header_bytes = header.to_bytes()?;
                 let new_dt_id = format!("dt_{}", self.dt_counter);
@@ -514,7 +514,7 @@ impl<W: MdfWrite> MdfWriter<W> {
                 .count();
             let dl_id = format!("dl_{}", dl_count);
             let common_len = *dt.dt_sizes.first().unwrap_or(&size);
-            let dl_block = DataListBlock::new_equal(dt.dt_positions.clone(), common_len);
+            let dl_block = DataListBlock::new_equal_length(dt.dt_positions.clone(), common_len);
             let dl_bytes = dl_block.to_bytes()?;
             let _pos = self.write_block_with_id(&dl_bytes, &dl_id)?;
             let dg_data_link_offset = 40;

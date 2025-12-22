@@ -4,18 +4,18 @@ use crate::blocks::common::{BlockHeader, BlockParse, read_string_block};
 use crate::blocks::conversion::base::ConversionBlock;
 use crate::types::DecodedValue;
 
-/// Given `cc_val = [min0, max0, min1, max1, …]`, return the first index where
+/// Given `values = [min0, max0, min1, max1, …]`, return the first index where
 /// `raw` falls into `[min_i, max_i]`.
 /// If no range matches, returns `n` (the default index).
-pub fn find_range_to_text_index(cc_val: &[f64], raw: f64, inclusive_upper: bool) -> usize {
-    let len = cc_val.len();
+pub fn find_range_to_text_index(values: &[f64], raw: f64, inclusive_upper: bool) -> usize {
+    let len = values.len();
     if len < 2 || len % 2 != 0 {
         return 0;
     }
     let n = len / 2;
     for i in 0..n {
-        let min = cc_val[2 * i];
-        let max = cc_val[2 * i + 1];
+        let min = values[2 * i];
+        let max = values[2 * i + 1];
         if inclusive_upper {
             if raw >= min && raw <= max {
                 return i;
@@ -37,10 +37,10 @@ pub fn apply_value_to_text(
         None => return Ok(value),
     };
     let idx = block
-        .cc_val
+        .values
         .iter()
         .position(|&k| k == raw)
-        .unwrap_or(block.cc_val.len());
+        .unwrap_or(block.values.len());
 
     // First try to use resolved data if available (std only)
     #[cfg(feature = "std")]
@@ -55,14 +55,14 @@ pub fn apply_value_to_text(
     }
 
     // If no match found and we have a default conversion, use it
-    if idx >= block.cc_val.len() {
+    if idx >= block.values.len() {
         if let Some(default_conversion) = block.get_default_conversion() {
             return default_conversion.apply_decoded(value, &[]);
         }
     }
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
-    let link = *block.cc_ref.get(idx).unwrap_or(&0);
+    let link = *block.refs.get(idx).unwrap_or(&0);
     if link == 0 {
         // Try default conversion as final fallback
         if let Some(default_conversion) = block.get_default_conversion() {
@@ -118,8 +118,8 @@ pub fn apply_range_to_text(
         value,
         DecodedValue::UnsignedInteger(_) | DecodedValue::SignedInteger(_)
     );
-    let idx = find_range_to_text_index(&block.cc_val, raw, inclusive_upper);
-    let n_ranges = block.cc_val.len() / 2;
+    let idx = find_range_to_text_index(&block.values, raw, inclusive_upper);
+    let n_ranges = block.values.len() / 2;
 
     // First try to use resolved data if available (std only)
     #[cfg(feature = "std")]
@@ -141,7 +141,7 @@ pub fn apply_range_to_text(
     }
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
-    let link = *block.cc_ref.get(idx).unwrap_or(&0);
+    let link = *block.refs.get(idx).unwrap_or(&0);
     if link == 0 {
         // Try default conversion as final fallback
         if let Some(default_conversion) = block.get_default_conversion() {
@@ -196,23 +196,23 @@ pub fn apply_text_to_value(
         DecodedValue::String(s) => s,
         other => return Ok(other),
     };
-    let n = block.cc_ref.len();
+    let n = block.refs.len();
 
     // First try to use resolved data if available (std only)
     #[cfg(feature = "std")]
     if let Some(resolved_texts) = &block.resolved_texts {
         for (i, resolved_text) in resolved_texts.iter() {
             if *i < n && input == *resolved_text {
-                if *i < block.cc_val.len() {
-                    return Ok(DecodedValue::Float(block.cc_val[*i]));
+                if *i < block.values.len() {
+                    return Ok(DecodedValue::Float(block.values[*i]));
                 } else {
                     return Ok(DecodedValue::Unknown);
                 }
             }
         }
         // If we have resolved texts but no match found, return default or unknown
-        if block.cc_val.len() > n {
-            return Ok(DecodedValue::Float(block.cc_val[n]));
+        if block.values.len() > n {
+            return Ok(DecodedValue::Float(block.values[n]));
         } else {
             return Ok(DecodedValue::Unknown);
         }
@@ -220,22 +220,22 @@ pub fn apply_text_to_value(
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
     for i in 0..n {
-        let link = block.cc_ref[i];
+        let link = block.refs[i];
         if link == 0 {
             continue;
         }
         if let Some(key_str) = read_string_block(file_data, link)? {
             if input == key_str {
-                if i < block.cc_val.len() {
-                    return Ok(DecodedValue::Float(block.cc_val[i]));
+                if i < block.values.len() {
+                    return Ok(DecodedValue::Float(block.values[i]));
                 } else {
                     return Ok(DecodedValue::Unknown);
                 }
             }
         }
     }
-    if block.cc_val.len() > n {
-        Ok(DecodedValue::Float(block.cc_val[n]))
+    if block.values.len() > n {
+        Ok(DecodedValue::Float(block.values[n]))
     } else {
         Ok(DecodedValue::Unknown)
     }
@@ -250,7 +250,7 @@ pub fn apply_text_to_text(
         DecodedValue::String(s) => s,
         other => return Ok(other),
     };
-    let pairs = block.cc_ref.len().saturating_sub(1) / 2;
+    let pairs = block.refs.len().saturating_sub(1) / 2;
 
     // First try to use resolved data if available (std only)
     #[cfg(feature = "std")]
@@ -280,8 +280,8 @@ pub fn apply_text_to_text(
 
     // Fallback to legacy behavior if no resolved data (for backward compatibility)
     for i in 0..pairs {
-        let key_link = block.cc_ref[2 * i];
-        let output_link = block.cc_ref[2 * i + 1];
+        let key_link = block.refs[2 * i];
+        let output_link = block.refs[2 * i + 1];
         if let Some(key_str) = read_string_block(file_data, key_link)? {
             if key_str == input {
                 return if output_link == 0 {
@@ -294,7 +294,7 @@ pub fn apply_text_to_text(
             }
         }
     }
-    let default_link = *block.cc_ref.get(2 * pairs).unwrap_or(&0);
+    let default_link = *block.refs.get(2 * pairs).unwrap_or(&0);
     if default_link == 0 {
         Ok(DecodedValue::String(input))
     } else {

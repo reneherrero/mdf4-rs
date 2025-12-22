@@ -3,7 +3,7 @@ use crate::{
     blocks::common::{BlockHeader, BlockParse},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataBlock<'a> {
     pub header: BlockHeader,
     pub data: &'a [u8],
@@ -19,7 +19,7 @@ impl<'a> BlockParse<'a> for DataBlock<'a> {
     fn from_bytes(bytes: &'a [u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
 
-        let data_len = (header.block_len as usize).saturating_sub(24);
+        let data_len = (header.length as usize).saturating_sub(24);
         let expected_bytes = 24 + data_len;
         if bytes.len() < expected_bytes {
             return Err(Error::TooShortBuffer {

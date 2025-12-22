@@ -77,8 +77,8 @@ impl<'a> Channel<'a> {
     /// - `Some(value)` for valid samples
     /// - `None` for invalid samples (invalidation bit set or decoding failed)
     pub fn values(&self) -> Result<Vec<Option<DecodedValue>>> {
-        let record_id_len = self.raw_data_group.block.record_id_len as usize;
-        let cg_data_bytes = self.raw_channel_group.block.samples_byte_nr;
+        let record_id_size = self.raw_data_group.block.record_id_size as usize;
+        let cg_data_bytes = self.raw_channel_group.block.record_size;
         let mut out = Vec::new();
 
         let records_iter =
@@ -90,7 +90,7 @@ impl<'a> Channel<'a> {
 
             // Decode with validity checking
             if let Some(decoded) =
-                decode_channel_value_with_validity(rec, record_id_len, cg_data_bytes, self.block)
+                decode_channel_value_with_validity(rec, record_id_size, cg_data_bytes, self.block)
             {
                 if decoded.is_valid {
                     // Value is valid, apply conversion

@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// A channel with lazy access to its raw record bytes (fixed-length or VLSD).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RawChannel {
     pub block: ChannelBlock,
 }
@@ -31,10 +31,10 @@ impl<'a> RawChannel {
         mmap: &'a [u8],
     ) -> Result<Box<dyn Iterator<Item = Result<&'a [u8]>> + 'a>> {
         // 1) VLSD path: channel has its own data pointer => SD/DL chain
-        if self.block.channel_type == 1 && self.block.data != 0 {
+        if self.block.channel_type == 1 && self.block.data_addr != 0 {
             // Capture the file bytes and channel pointer
             let bytes = mmap;
-            let mut next_addr = self.block.data;
+            let mut next_addr = self.block.data_addr;
             let mut data_links = Vec::new();
             let mut link_idx = 0;
             let mut current_sdb: Option<SignalDataBlock> = None;
@@ -94,9 +94,9 @@ impl<'a> RawChannel {
                                 // Data List Block
                                 match DataListBlock::from_bytes(&bytes[off..]) {
                                     Ok(dl) => {
-                                        data_links = dl.data_links.clone();
+                                        data_links = dl.data_block_addrs.clone();
                                         link_idx = 0;
-                                        next_addr = dl.next;
+                                        next_addr = dl.next_dl_addr;
                                         continue; // back to loop start
                                     }
                                     Err(e) => return Some(Err(e)),
@@ -134,9 +134,9 @@ impl<'a> RawChannel {
 
         // Compute the size of each record:
         // Record structure: record_id + data_bytes + invalidation_bytes
-        let record_id_len = data_group.block.record_id_len as usize;
-        let sample_byte_len = channel_group.block.samples_byte_nr as usize;
-        let invalidation_bytes = channel_group.block.invalidation_bytes_nr as usize;
+        let record_id_len = data_group.block.record_id_size as usize;
+        let sample_byte_len = channel_group.block.record_size as usize;
+        let invalidation_bytes = channel_group.block.invalidation_size as usize;
         let record_size = record_id_len + sample_byte_len + invalidation_bytes;
 
         // Gather all DataBlock fragments (DT, DV or DZ):
@@ -151,8 +151,8 @@ impl<'a> RawChannel {
                 std::collections::HashMap::new();
             for cg in &data_group.channel_groups {
                 let cg_record_size = record_id_len
-                    + cg.block.samples_byte_nr as usize
-                    + cg.block.invalidation_bytes_nr as usize;
+                    + cg.block.record_size as usize
+                    + cg.block.invalidation_size as usize;
                 record_sizes.insert(cg.block.record_id, cg_record_size);
             }
 

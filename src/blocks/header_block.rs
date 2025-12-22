@@ -1,78 +1,64 @@
 // src/blocks/header_block.rs
+use super::HD_BLOCK_SIZE;
 use crate::{
-    Error, Result,
-    blocks::common::{BlockHeader, BlockParse},
+    Result,
+    blocks::common::{
+        BlockHeader, BlockParse, debug_assert_aligned, read_u8, read_u64, validate_block_id,
+        validate_block_length, validate_buffer_size,
+    },
 };
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-#[derive(Debug)]
+/// Header Block (##HD) - file-level metadata and links to data groups.
+///
+/// The header block is the entry point for all measurement data in an MDF file.
+/// It contains links to data groups, file history, events, and attachments.
+#[derive(Debug, Clone)]
 pub struct HeaderBlock {
-    pub header: BlockHeader,        // Common header from the first 24 bytes
-    pub first_dg_addr: u64,         // bytes[24..32]
-    pub file_history_addr: u64,     // bytes[32..40]
-    pub channel_tree_addr: u64,     // bytes[40..48]
-    pub first_attachment_addr: u64, // bytes[48..56]
-    pub first_event_addr: u64,      // bytes[56..64]
-    pub comment_addr: u64,          // bytes[64..72]
-    pub abs_time: u64,              // bytes[72..80]
-    pub tz_offset: i16,             // bytes[80..82]
-    pub daylight_save_time: i16,    // bytes[82..84]
-    pub time_flags: u8,             // byte[84]
-    pub time_quality: u8,           // byte[85]
-    pub flags: u8,                  // byte[86]
-    pub reserved1: u8,              // byte[87]
-    pub start_angle: u64,           // bytes[88..96]
-    pub start_distance: u64,        // bytes[96..104]
+    pub header: BlockHeader,
+    /// Link to first data group block.
+    pub first_dg_addr: u64,
+    /// Link to file history block.
+    pub file_history_addr: u64,
+    /// Link to channel hierarchy tree block.
+    pub channel_tree_addr: u64,
+    /// Link to first attachment block.
+    pub first_attachment_addr: u64,
+    /// Link to first event block.
+    pub first_event_addr: u64,
+    /// Link to comment text/metadata block.
+    pub comment_addr: u64,
+    /// Absolute start time in nanoseconds since Jan 1, 1970 (UTC).
+    pub start_time_ns: u64,
+    /// Timezone offset in minutes from UTC.
+    pub tz_offset_min: i16,
+    /// Daylight saving time offset in minutes.
+    pub dst_offset_min: i16,
+    /// Time flags (bit 0: local time, bit 1: offsets valid).
+    pub time_flags: u8,
+    /// Time quality class (0=unknown, 10=external sync, 16=local PC).
+    pub time_quality: u8,
+    /// Header flags.
+    pub flags: u8,
+    /// Start angle in radians (for angular synchronization).
+    pub start_angle_rad: f64,
+    /// Start distance in meters (for distance synchronization).
+    pub start_distance_m: f64,
 }
 
 impl HeaderBlock {
     /// Serializes the HeaderBlock to bytes according to MDF 4.1 specification.
-    ///
-    /// # Structure (104 bytes total):
-    /// - BlockHeader (24 bytes): Standard block header with id "##HD"
-    /// - Link section (48 bytes): Six 8-byte links to other blocks
-    ///   * first_dg_addr: Link to first Data Group block
-    ///   * file_history_addr: Link to file history block
-    ///   * channel_tree_addr: Link to channel hierarchy tree
-    ///   * first_attachment_addr: Link to first attachment block
-    ///   * first_event_addr: Link to first event block
-    ///   * comment_addr: Link to comment block
-    /// - Time section (16 bytes): Timestamp and timezone information
-    /// - Angle/Distance section (16 bytes): Start values for angle and distance
-    ///
-    /// # Returns
-    /// - `Ok(Vec<u8>)` containing the serialized header block
-    /// - `Err(MdfError)` if serialization fails
-    ///
-    /// # Important
-    /// - The header must have id="##HD" and block_len=104
-    /// - Links will typically be updated after all blocks are written
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        // Validate the header before serializing
-        if self.header.id != "##HD" {
-            return Err(Error::BlockSerializationError(format!(
-                "HeaderBlock must have ID '##HD', found '{}'",
-                self.header.id
-            )));
-        }
+        validate_block_id(&self.header, "##HD")?;
+        validate_block_length(&self.header, HD_BLOCK_SIZE as u64)?;
 
-        if self.header.block_len != 104 {
-            return Err(Error::BlockSerializationError(format!(
-                "HeaderBlock must have block_len=104, found {}",
-                self.header.block_len
-            )));
-        }
+        let mut buffer = Vec::with_capacity(HD_BLOCK_SIZE);
 
-        // Create a buffer with exact capacity for efficiency
-        let mut buffer = Vec::with_capacity(104);
-
-        // 1. Write the block header (24 bytes)
+        // Header (24 bytes)
         buffer.extend_from_slice(&self.header.to_bytes()?);
 
-        // 2. Write the six link addresses (48 bytes total)
-        // Each is a u64 in little-endian format
+        // Links (48 bytes)
         buffer.extend_from_slice(&self.first_dg_addr.to_le_bytes());
         buffer.extend_from_slice(&self.file_history_addr.to_le_bytes());
         buffer.extend_from_slice(&self.channel_tree_addr.to_le_bytes());
@@ -80,101 +66,88 @@ impl HeaderBlock {
         buffer.extend_from_slice(&self.first_event_addr.to_le_bytes());
         buffer.extend_from_slice(&self.comment_addr.to_le_bytes());
 
-        // 3. Write the time section (16 bytes)
-        buffer.extend_from_slice(&self.abs_time.to_le_bytes()); // 8 bytes - absolute time
-        buffer.extend_from_slice(&self.tz_offset.to_le_bytes()); // 2 bytes - timezone offset
-        buffer.extend_from_slice(&self.daylight_save_time.to_le_bytes()); // 2 bytes - DST offset
-        buffer.push(self.time_flags); // 1 byte - time flags
-        buffer.push(self.time_quality); // 1 byte - time quality
-        buffer.push(self.flags); // 1 byte - general flags
-        buffer.push(self.reserved1); // 1 byte - reserved
+        // Time section (16 bytes)
+        buffer.extend_from_slice(&self.start_time_ns.to_le_bytes());
+        buffer.extend_from_slice(&self.tz_offset_min.to_le_bytes());
+        buffer.extend_from_slice(&self.dst_offset_min.to_le_bytes());
+        buffer.push(self.time_flags);
+        buffer.push(self.time_quality);
+        buffer.push(self.flags);
+        buffer.push(0); // reserved
 
-        // 4. Write the angle/distance section (16 bytes)
-        buffer.extend_from_slice(&self.start_angle.to_le_bytes()); // 8 bytes - start angle
-        buffer.extend_from_slice(&self.start_distance.to_le_bytes()); // 8 bytes - start distance
+        // Angle/Distance section (16 bytes) - stored as raw u64 bit patterns
+        buffer.extend_from_slice(&self.start_angle_rad.to_le_bytes());
+        buffer.extend_from_slice(&self.start_distance_m.to_le_bytes());
 
-        // Verify the buffer is exactly 104 bytes
-        if buffer.len() != 104 {
-            return Err(Error::BlockSerializationError(format!(
-                "HeaderBlock must be exactly 104 bytes, got {}",
-                buffer.len()
-            )));
-        }
-
-        // Ensure 8-byte alignment (should always be true since 104 is divisible by 8)
-        debug_assert_eq!(
-            buffer.len() % 8,
-            0,
-            "HeaderBlock size is not 8-byte aligned"
-        );
-
+        debug_assert_aligned(buffer.len());
         Ok(buffer)
     }
 }
 
 impl BlockParse<'_> for HeaderBlock {
     const ID: &'static str = "##HD";
-    /// Creates a HeaderBlock from a 104-byte slice.
+
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
+        validate_buffer_size(bytes, HD_BLOCK_SIZE)?;
 
-        let expected_bytes = 104;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
+        // Read i16 values using helper pattern
+        let tz_offset_min = i16::from_le_bytes([bytes[80], bytes[81]]);
+        let dst_offset_min = i16::from_le_bytes([bytes[82], bytes[83]]);
 
         Ok(Self {
             header,
-            first_dg_addr: u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-            file_history_addr: u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
-            channel_tree_addr: u64::from_le_bytes(bytes[40..48].try_into().unwrap()),
-            first_attachment_addr: u64::from_le_bytes(bytes[48..56].try_into().unwrap()),
-            first_event_addr: u64::from_le_bytes(bytes[56..64].try_into().unwrap()),
-            comment_addr: u64::from_le_bytes(bytes[64..72].try_into().unwrap()),
-            abs_time: u64::from_le_bytes(bytes[72..80].try_into().unwrap()),
-            tz_offset: i16::from_le_bytes(bytes[80..82].try_into().unwrap()),
-            daylight_save_time: i16::from_le_bytes(bytes[82..84].try_into().unwrap()),
-            time_flags: bytes[84],
-            time_quality: bytes[85],
-            flags: bytes[86],
-            reserved1: bytes[87],
-            start_angle: u64::from_le_bytes(bytes[88..96].try_into().unwrap()),
-            start_distance: u64::from_le_bytes(bytes[96..104].try_into().unwrap()),
+            // Links section (6 x u64 = 48 bytes at offset 24)
+            first_dg_addr: read_u64(bytes, 24),
+            file_history_addr: read_u64(bytes, 32),
+            channel_tree_addr: read_u64(bytes, 40),
+            first_attachment_addr: read_u64(bytes, 48),
+            first_event_addr: read_u64(bytes, 56),
+            comment_addr: read_u64(bytes, 64),
+            // Time section at offset 72
+            start_time_ns: read_u64(bytes, 72),
+            tz_offset_min,
+            dst_offset_min,
+            time_flags: read_u8(bytes, 84),
+            time_quality: read_u8(bytes, 85),
+            flags: read_u8(bytes, 86),
+            // byte 87: reserved (skipped)
+            // Angle/Distance section at offset 88 (stored as f64)
+            start_angle_rad: f64::from_le_bytes([
+                bytes[88], bytes[89], bytes[90], bytes[91], bytes[92], bytes[93], bytes[94],
+                bytes[95],
+            ]),
+            start_distance_m: f64::from_le_bytes([
+                bytes[96], bytes[97], bytes[98], bytes[99], bytes[100], bytes[101], bytes[102],
+                bytes[103],
+            ]),
         })
     }
 }
 
 impl Default for HeaderBlock {
     fn default() -> Self {
-        let header = BlockHeader {
-            id: String::from("##HD"),
-            reserved0: 0,
-            block_len: 104,
-            links_nr: 6,
-        };
-
-        HeaderBlock {
-            header,
+        Self {
+            header: BlockHeader {
+                id: String::from("##HD"),
+                reserved: 0,
+                length: HD_BLOCK_SIZE as u64,
+                link_count: 6,
+            },
             first_dg_addr: 0,
             file_history_addr: 0,
             channel_tree_addr: 0,
             first_attachment_addr: 0,
             first_event_addr: 0,
             comment_addr: 0,
-            abs_time: 2 * 3600 * 1000000000,
-            tz_offset: 0,
-            daylight_save_time: 0,
+            start_time_ns: 0,
+            tz_offset_min: 0,
+            dst_offset_min: 0,
             time_flags: 0,
             time_quality: 0,
             flags: 0,
-            reserved1: 0,
-            start_angle: 0,
-            start_distance: 0,
+            start_angle_rad: 0.0,
+            start_distance_m: 0.0,
         }
     }
 }

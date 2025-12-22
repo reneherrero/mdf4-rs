@@ -1,38 +1,41 @@
 use crate::{
     Error, Result,
-    blocks::common::{BlockHeader, BlockParse},
+    blocks::common::{
+        BlockHeader, BlockParse, debug_assert_aligned, padding_to_align_8, validate_block_id,
+        validate_buffer_size,
+    },
 };
 use alloc::format;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 
-#[derive(Debug)]
+/// Text Block (##TX) - stores plain text strings.
+///
+/// Text blocks are used to store names, comments, and other string data
+/// throughout the MDF file. The text is stored as null-terminated UTF-8.
+#[derive(Debug, Clone)]
 pub struct TextBlock {
     pub header: BlockHeader,
+    /// The text content (without null terminator).
     pub text: String,
 }
 
 impl BlockParse<'_> for TextBlock {
     const ID: &'static str = "##TX";
+
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
 
-        let data_len = (header.block_len as usize).saturating_sub(24);
-        let expected_bytes = 24 + data_len;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
+        let data_len = (header.length as usize).saturating_sub(24);
+        validate_buffer_size(bytes, 24 + data_len)?;
+
         let data = &bytes[24..24 + data_len];
 
-        let text = String::from_utf8_lossy(data)
-            .trim_matches('\0') // Trim all leading and trailing null characters.
-            .to_string();
+        // Parse text efficiently: try UTF-8 first, fall back to lossy conversion
+        let text = match core::str::from_utf8(data) {
+            Ok(s) => s.trim_matches('\0').to_string(),
+            Err(_) => String::from_utf8_lossy(data).trim_matches('\0').to_string(),
+        };
 
         Ok(Self { header, text })
     }
@@ -40,114 +43,67 @@ impl BlockParse<'_> for TextBlock {
 
 impl TextBlock {
     /// Creates a new TextBlock with the provided text content.
-    /// This will automatically calculate the correct block size based on the text length.
     ///
-    /// # Arguments
-    /// * `text` - The text content to store in this block
-    ///
-    /// # Returns
-    /// A new TextBlock with properly initialized header and text content
+    /// Automatically calculates the correct block size based on the text length,
+    /// ensuring proper 8-byte alignment.
     pub fn new(text: &str) -> Self {
-        // Calculate required block size: 24 bytes for header + text length
-        // The block size must be a multiple of 8 bytes for alignment
-        let text_bytes = text.as_bytes();
-        let needs_null = text_bytes.is_empty() || *text_bytes.last().unwrap() != 0;
-        let text_size = text_bytes.len() + if needs_null { 1 } else { 0 };
-        let unpadded_size = 24 + text_size;
-        let padding_bytes = (8 - (unpadded_size % 8)) % 8;
-        let block_len = unpadded_size + padding_bytes;
+        let block_len = Self::calculate_block_len(text);
 
-        // Create header with proper ID, size, and link count (0 for TextBlock)
-        let header = BlockHeader {
-            id: String::from("##TX"),
-            reserved0: 0,
-            block_len: block_len as u64,
-            links_nr: 0, // TextBlock has no links
-        };
-
-        TextBlock {
-            header,
-            text: text.to_string(),
+        Self {
+            header: BlockHeader {
+                id: String::from("##TX"),
+                reserved: 0,
+                length: block_len as u64,
+                link_count: 0,
+            },
+            text: String::from(text),
         }
     }
 
     /// Creates an empty TextBlock with a minimal valid size.
-    ///
-    /// # Returns
-    /// A new TextBlock with an empty text string
     pub fn new_empty() -> Self {
         Self::new("")
     }
 
-    /// Serializes the TextBlock to bytes according to MDF 4.1 specification.
-    ///
-    /// TextBlock structure consists of:
-    /// - BlockHeader (24 bytes)
-    /// - Text content (variable length, null-terminated)
-    /// - Optional padding to maintain 8-byte alignment
-    ///
-    /// # Returns
-    /// - `Ok(Vec<u8>)` containing the serialized text block
-    /// - `Err(MdfError)` if serialization fails
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        // Validate the block ID
-        if self.header.id != "##TX" {
-            return Err(Error::BlockSerializationError(format!(
-                "TextBlock must have ID '##TX', found '{}'",
-                self.header.id
-            )));
-        }
-
-        // Get the text as bytes
-        let text_bytes = self.text.as_bytes();
-        let needs_null = text_bytes.is_empty() || *text_bytes.last().unwrap() != 0;
+    /// Calculates the block length for a given text string.
+    fn calculate_block_len(text: &str) -> usize {
+        let text_bytes = text.as_bytes();
+        let needs_null = text_bytes.is_empty() || text_bytes.last() != Some(&0);
         let text_size = text_bytes.len() + if needs_null { 1 } else { 0 };
-
-        // Calculate total size including header, text (with null) and padding
         let unpadded_size = 24 + text_size;
-        let padding_bytes = (8 - (unpadded_size % 8)) % 8;
-        let total_size = unpadded_size + padding_bytes;
+        unpadded_size + padding_to_align_8(unpadded_size)
+    }
 
-        // Verify block_len in header matches calculated size
-        if self.header.block_len as usize != total_size {
+    /// Serializes the TextBlock to bytes according to MDF 4.1 specification.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        validate_block_id(&self.header, "##TX")?;
+
+        let text_bytes = self.text.as_bytes();
+        let needs_null = text_bytes.is_empty() || text_bytes.last() != Some(&0);
+        let total_size = Self::calculate_block_len(&self.text);
+
+        if self.header.length as usize != total_size {
             return Err(Error::BlockSerializationError(format!(
-                "TextBlock header.block_len ({}) does not match calculated size ({})",
-                self.header.block_len, total_size
+                "TextBlock header.length ({}) does not match calculated size ({})",
+                self.header.length, total_size
             )));
         }
 
-        // Create a buffer with exact capacity
         let mut buffer = Vec::with_capacity(total_size);
 
-        // 1. Write the header (24 bytes)
+        // Header (24 bytes)
         buffer.extend_from_slice(&self.header.to_bytes()?);
 
-        // 2. Write the text bytes
+        // Text content
         buffer.extend_from_slice(text_bytes);
-
-        // 3. Add null terminator if not already present
         if needs_null {
             buffer.push(0);
         }
 
-        // 4. Add padding to maintain 8-byte alignment
-        let current_size = buffer.len();
-        let remaining_padding = total_size - current_size;
-        if remaining_padding > 0 {
-            buffer.extend(vec![0u8; remaining_padding]);
-        }
+        // Padding to 8-byte alignment
+        buffer.resize(total_size, 0);
 
-        // Verify the final size is correct and 8-byte aligned
-        if buffer.len() != total_size {
-            return Err(Error::BlockSerializationError(format!(
-                "TextBlock has incorrect final size: expected {}, got {}",
-                total_size,
-                buffer.len()
-            )));
-        }
-
-        debug_assert_eq!(buffer.len() % 8, 0, "TextBlock size is not 8-byte aligned");
-
+        debug_assert_aligned(buffer.len());
         Ok(buffer)
     }
 }

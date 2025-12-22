@@ -87,7 +87,7 @@ fn main() -> Result<()> {
             channel.name.as_deref().unwrap_or("<unnamed>")
         );
         if let Some(conversion) = &channel.conversion {
-            println!("    Conversion type: {:?}", conversion.cc_type);
+            println!("    Conversion type: {:?}", conversion.conversion_type);
             if let Some(resolved_texts) = &conversion.resolved_texts {
                 println!("    Resolved texts: {} entries", resolved_texts.len());
             }

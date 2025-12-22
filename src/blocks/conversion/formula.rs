@@ -13,11 +13,11 @@ impl ConversionBlock {
     /// `Ok(())` on success or an [`crate::Error`] if the formula block cannot be
     /// read.
     pub fn resolve_formula(&mut self, file_data: &[u8]) -> Result<()> {
-        if self.cc_type != ConversionType::Algebraic || self.cc_ref.is_empty() {
+        if self.conversion_type != ConversionType::Algebraic || self.refs.is_empty() {
             return Ok(());
         }
 
-        let addr = self.cc_ref[0];
+        let addr = self.refs[0];
         if let Some(formula) = read_string_block(file_data, addr)? {
             self.formula = Some(formula);
         }

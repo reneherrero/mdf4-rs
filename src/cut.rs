@@ -87,12 +87,12 @@ pub fn cut_mdf_by_time(
                 Some(i) => i,
                 None => {
                     // No time channel found; copy all records
-                    writer.start_data_block_for_cg(&cg_id, dg.block.record_id_len)?;
+                    writer.start_data_block_for_cg(&cg_id, dg.block.record_id_size)?;
                     while let Some(rec) = next_record_set(&mut iters)? {
                         let mut vals = Vec::new();
                         for (slice, ch) in rec.into_iter().zip(channel_blocks.iter()) {
                             let dv =
-                                decode_channel_value(slice, dg.block.record_id_len as usize, ch)
+                                decode_channel_value(slice, dg.block.record_id_size as usize, ch)
                                     .unwrap_or(DecodedValue::Unknown);
                             vals.push(ch.apply_conversion_value(dv, &mdf.mmap)?);
                         }
@@ -103,14 +103,14 @@ pub fn cut_mdf_by_time(
                 }
             };
 
-            writer.start_data_block_for_cg(&cg_id, dg.block.record_id_len)?;
+            writer.start_data_block_for_cg(&cg_id, dg.block.record_id_size)?;
 
             while let Some(rec) = next_record_set(&mut iters)? {
                 // Decode time value
                 let time_val = {
                     let ch = &channel_blocks[time_idx];
                     let dv =
-                        decode_channel_value(rec[time_idx], dg.block.record_id_len as usize, ch)
+                        decode_channel_value(rec[time_idx], dg.block.record_id_size as usize, ch)
                             .unwrap_or(DecodedValue::Unknown);
                     match ch.apply_conversion_value(dv, &mdf.mmap)? {
                         DecodedValue::Float(f) => f,
@@ -129,7 +129,7 @@ pub fn cut_mdf_by_time(
 
                 let mut vals = Vec::new();
                 for (slice, ch) in rec.into_iter().zip(channel_blocks.iter()) {
-                    let dv = decode_channel_value(slice, dg.block.record_id_len as usize, ch)
+                    let dv = decode_channel_value(slice, dg.block.record_id_size as usize, ch)
                         .unwrap_or(DecodedValue::Unknown);
                     vals.push(ch.apply_conversion_value(dv, &mdf.mmap)?);
                 }

@@ -1,29 +1,42 @@
 // identification_block.rs
-use crate::{Error, Result};
-use alloc::format;
+use super::ID_BLOCK_SIZE;
+use crate::{
+    Error, Result,
+    blocks::common::{debug_assert_aligned, read_u16, validate_buffer_size},
+};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::str::{self, from_utf8};
 
-#[derive(Debug)]
+/// Identification Block - file format identifier at the start of every MDF file.
+///
+/// The identification block is always located at file offset 0 and identifies
+/// the file as an MDF file, along with version information.
+#[derive(Debug, Clone)]
 pub struct IdentificationBlock {
-    pub file_identifier: String,
-    pub version_identifier: String,
-    pub program_identifier: String,
+    /// File identifier string ("MDF     " or "UnFinMF ").
+    pub file_id: String,
+    /// Format version string (e.g., "4.10    ").
+    pub format_version: String,
+    /// Program identifier string (tool that created the file).
+    pub program_id: String,
+    /// Numeric version (e.g., 410 for version 4.10).
     pub version_number: u16,
-    pub standard_unfinalized_flags: u16,
-    pub custom_unfinalized_flags: u16,
+    /// Standard unfinalized flags (indicates incomplete sections).
+    pub unfinalized_flags: u16,
+    /// Custom unfinalized flags (vendor-specific).
+    pub custom_flags: u16,
 }
 
 impl Default for IdentificationBlock {
     fn default() -> Self {
-        IdentificationBlock {
-            file_identifier: String::from("MDF     "),
-            version_identifier: String::from("4.10    "), // padded to 8 bytes
-            program_identifier: String::from("mdf4-rs "), // padded to 8 bytes
-            version_number: 410,                          // 4.10
-            standard_unfinalized_flags: 0,
-            custom_unfinalized_flags: 0,
+        Self {
+            file_id: String::from("MDF     "),
+            format_version: String::from("4.10    "),
+            program_id: String::from("mdf4-rs "),
+            version_number: 410,
+            unfinalized_flags: 0,
+            custom_flags: 0,
         }
     }
 }
@@ -69,77 +82,55 @@ impl IdentificationBlock {
         }
     }
 
+    /// Serializes the IdentificationBlock to bytes according to MDF 4.1 specification.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        // Create a buffer with exact capacity
-        let mut buffer = Vec::with_capacity(64);
+        let mut buffer = Vec::with_capacity(ID_BLOCK_SIZE);
 
-        // 1. File identifier (8 bytes) - "MDF     " with space padding
-        // According to spec: "MDF" followed by five spaces, no zero termination
+        // File identifier (8 bytes)
         let mut file_id = [0u8; 8];
-        Self::copy_string_with_padding(&self.file_identifier, &mut file_id, true); // Use space padding
+        Self::copy_string_with_padding(&self.file_id, &mut file_id, true);
         buffer.extend_from_slice(&file_id);
 
-        // 2. Version identifier (8 bytes) - "4.10    " with space padding
-        // According to spec: can be zero-terminated OR space-padded (we use space padding)
+        // Format version (8 bytes)
         let mut version_id = [0u8; 8];
-        Self::copy_string_with_padding(&self.version_identifier, &mut version_id, true); // Use space padding
+        Self::copy_string_with_padding(&self.format_version, &mut version_id, true);
         buffer.extend_from_slice(&version_id);
 
-        // 3. Program identifier (8 bytes) - e.g., "mdf4-rs " with space padding
-        // According to spec: no zero-termination required
+        // Program identifier (8 bytes)
         let mut program_id = [0u8; 8];
-        Self::copy_string_with_padding(&self.program_identifier, &mut program_id, true); // Use space padding
+        Self::copy_string_with_padding(&self.program_id, &mut program_id, true);
         buffer.extend_from_slice(&program_id);
 
-        // 4. Reserved section (4 bytes of zeros)
+        // Reserved (4 bytes)
         buffer.extend_from_slice(&[0u8; 4]);
 
-        // 5. Version number as u16 (2 bytes) - e.g., 410 for version 4.10
+        // Version number (2 bytes)
         buffer.extend_from_slice(&self.version_number.to_le_bytes());
 
-        // 6. Reserved section (30 bytes of zeros)
+        // Reserved (30 bytes)
         buffer.extend_from_slice(&[0u8; 30]);
 
-        // 7. Standard unfinalized flags (2 bytes)
-        buffer.extend_from_slice(&self.standard_unfinalized_flags.to_le_bytes());
+        // Unfinalized flags (2 bytes)
+        buffer.extend_from_slice(&self.unfinalized_flags.to_le_bytes());
 
-        // 8. Custom unfinalized flags (2 bytes)
-        buffer.extend_from_slice(&self.custom_unfinalized_flags.to_le_bytes());
+        // Custom flags (2 bytes)
+        buffer.extend_from_slice(&self.custom_flags.to_le_bytes());
 
-        // Verify the buffer is exactly 64 bytes
-        if buffer.len() != 64 {
-            return Err(Error::BlockSerializationError(format!(
-                "IdentificationBlock must be exactly 64 bytes, got {}",
-                buffer.len()
-            )));
-        }
-
+        debug_assert_aligned(buffer.len());
         Ok(buffer)
     }
 
-    /// Parse an identification block from a 64 byte slice.
-    ///
-    /// # Arguments
-    /// * `bytes` - Slice containing the complete `##ID` block.
-    ///
-    /// # Returns
-    /// The populated [`IdentificationBlock`] or an [`Error`] if the slice is
-    /// invalid.
+    /// Parses an identification block from a 64 byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let expected_bytes = 64;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
+        validate_buffer_size(bytes, ID_BLOCK_SIZE)?;
 
-        let file_identifier = str::from_utf8(&bytes[0..8]).unwrap().to_string();
+        let file_id = str::from_utf8(&bytes[0..8])
+            .map(String::from)
+            .unwrap_or_else(|_| String::from_utf8_lossy(&bytes[0..8]).into_owned());
+
         // Accept both finalized ("MDF     ") and unfinalized ("UnFinMF ") files
-        if file_identifier != "MDF     " && file_identifier != "UnFinMF " {
-            return Err(Error::FileIdentifierError(file_identifier));
+        if file_id != "MDF     " && file_id != "UnFinMF " {
+            return Err(Error::FileIdentifierError(file_id));
         }
 
         let (major, minor) = Self::parse_block_version(&bytes[8..16])?;
@@ -150,15 +141,16 @@ impl IdentificationBlock {
         }
 
         Ok(Self {
-            file_identifier,
-            version_identifier: String::from(str::from_utf8(&bytes[8..16]).unwrap()),
-            program_identifier: String::from(str::from_utf8(&bytes[16..24]).unwrap()),
-            // Reserved bytes between 24 and 28 are skipped
-            // The version number immediately follows at bytes 28..30
-            version_number: u16::from_le_bytes(bytes[28..30].try_into().unwrap()),
-            // Reserved bytes between 31 and 60 are skipped
-            standard_unfinalized_flags: u16::from_le_bytes(bytes[60..62].try_into().unwrap()),
-            custom_unfinalized_flags: u16::from_le_bytes(bytes[62..64].try_into().unwrap()),
+            file_id,
+            format_version: str::from_utf8(&bytes[8..16])
+                .map(String::from)
+                .unwrap_or_else(|_| String::from_utf8_lossy(&bytes[8..16]).into_owned()),
+            program_id: str::from_utf8(&bytes[16..24])
+                .map(String::from)
+                .unwrap_or_else(|_| String::from_utf8_lossy(&bytes[16..24]).into_owned()),
+            version_number: read_u16(bytes, 28),
+            unfinalized_flags: read_u16(bytes, 60),
+            custom_flags: read_u16(bytes, 62),
         })
     }
     /// Parse the textual version stored in the identification block.

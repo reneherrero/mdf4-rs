@@ -53,33 +53,13 @@ pub fn signal_to_data_type(signal: &dbc_rs::Signal) -> DataType {
     let is_le = signal.byte_order() == dbc_rs::ByteOrder::LittleEndian;
     let is_unsigned = signal.is_unsigned();
 
-    // Determine the appropriate integer width
-    // MDF4 supports 8, 16, 32, 64 bit integers
+    // MDF4 integer types: byte order + signedness
+    // Bit width is stored separately in bit_count field
     match (is_unsigned, is_le, length) {
-        // Unsigned Little Endian
-        (true, true, 1..=8) => DataType::UnsignedIntegerLE,
-        (true, true, 9..=16) => DataType::UnsignedIntegerLE,
-        (true, true, 17..=32) => DataType::UnsignedIntegerLE,
-        (true, true, 33..=64) => DataType::UnsignedIntegerLE,
-
-        // Unsigned Big Endian
-        (true, false, 1..=8) => DataType::UnsignedIntegerBE,
-        (true, false, 9..=16) => DataType::UnsignedIntegerBE,
-        (true, false, 17..=32) => DataType::UnsignedIntegerBE,
-        (true, false, 33..=64) => DataType::UnsignedIntegerBE,
-
-        // Signed Little Endian
-        (false, true, 1..=8) => DataType::SignedIntegerLE,
-        (false, true, 9..=16) => DataType::SignedIntegerLE,
-        (false, true, 17..=32) => DataType::SignedIntegerLE,
-        (false, true, 33..=64) => DataType::SignedIntegerLE,
-
-        // Signed Big Endian
-        (false, false, 1..=8) => DataType::SignedIntegerBE,
-        (false, false, 9..=16) => DataType::SignedIntegerBE,
-        (false, false, 17..=32) => DataType::SignedIntegerBE,
-        (false, false, 33..=64) => DataType::SignedIntegerBE,
-
+        (true, true, 1..=64) => DataType::UnsignedIntegerLE,
+        (true, false, 1..=64) => DataType::UnsignedIntegerBE,
+        (false, true, 1..=64) => DataType::SignedIntegerLE,
+        (false, false, 1..=64) => DataType::SignedIntegerBE,
         // Fallback for unusual cases (shouldn't happen with valid CAN signals)
         _ => DataType::ByteArray,
     }
@@ -124,6 +104,7 @@ pub fn signal_to_bit_count(signal: &dbc_rs::Signal) -> u32 {
 ///     writer.set_channel_conversion(&channel_id, &conv)?;
 /// }
 /// ```
+#[allow(dead_code)] // Public API for library users, tested but not used internally
 pub fn signal_to_conversion(signal: &dbc_rs::Signal) -> Option<ConversionBlock> {
     let factor = signal.factor();
     let offset = signal.offset();
@@ -189,8 +170,10 @@ pub struct SignalInfo {
     /// Physical maximum value
     pub max: f64,
     /// DBC factor for manual decoding
+    #[allow(dead_code)] // Used by raw_to_physical/physical_to_raw methods
     pub factor: f64,
     /// DBC offset for manual decoding
+    #[allow(dead_code)] // Used by raw_to_physical/physical_to_raw methods
     pub offset: f64,
     /// Whether the signal is unsigned
     pub unsigned: bool,
@@ -217,22 +200,26 @@ impl SignalInfo {
     }
 
     /// Check if this signal needs a conversion block.
+    #[allow(dead_code)] // Public API for library users
     pub fn needs_conversion(&self) -> bool {
         self.conversion.is_some()
     }
 
     /// Check if this is an identity conversion (factor=1, offset=0).
+    #[allow(dead_code)] // Public API for library users
     pub fn is_identity(&self) -> bool {
         self.factor == 1.0 && self.offset == 0.0
     }
 
     /// Convert a raw integer value to physical value.
+    #[allow(dead_code)] // Public API for library users
     #[inline]
     pub fn raw_to_physical(&self, raw: i64) -> f64 {
         self.offset + self.factor * (raw as f64)
     }
 
     /// Convert a physical value to raw integer value.
+    #[allow(dead_code)] // Public API for library users
     #[inline]
     pub fn physical_to_raw(&self, physical: f64) -> i64 {
         let raw = (physical - self.offset) / self.factor;
@@ -246,6 +233,7 @@ impl SignalInfo {
 }
 
 /// Information about a DBC message for MDF4 channel group creation.
+#[allow(dead_code)] // Public API for library users working with DBC message metadata
 #[derive(Debug, Clone)]
 pub struct MessageInfo {
     /// CAN message ID
@@ -262,6 +250,7 @@ pub struct MessageInfo {
     pub is_extended: bool,
 }
 
+#[allow(dead_code)] // Public API methods for library users
 impl MessageInfo {
     /// Creates MessageInfo from a DBC message.
     pub fn from_message(message: &dbc_rs::Message) -> Self {
@@ -292,6 +281,7 @@ impl MessageInfo {
 /// Extract all message information from a DBC database.
 ///
 /// This is useful for pre-processing DBC data before logging.
+#[allow(dead_code)] // Public API for batch DBC processing
 pub fn extract_message_info(dbc: &dbc_rs::Dbc) -> alloc::vec::Vec<MessageInfo> {
     dbc.messages()
         .iter()
@@ -314,6 +304,7 @@ use alloc::vec::Vec;
 ///
 /// # Returns
 /// A tuple of (mapping as Vec, default text) suitable for `add_value_to_text_conversion`
+#[allow(dead_code)] // Public API for DBC VAL_ to MDF4 conversion
 pub fn value_descriptions_to_mapping<'a>(
     descriptions: impl Iterator<Item = (i64, &'a str)>,
     default_text: &str,
@@ -381,9 +372,9 @@ BO_ 100 TestMsg: 8 Vector__XXX
         assert!(conv.is_some());
 
         let conv = conv.unwrap();
-        assert_eq!(conv.cc_val.len(), 2);
-        assert_eq!(conv.cc_val[0], 0.0); // offset
-        assert_eq!(conv.cc_val[1], 0.25); // factor
+        assert_eq!(conv.values.len(), 2);
+        assert_eq!(conv.values[0], 0.0); // offset
+        assert_eq!(conv.values[1], 0.25); // factor
     }
 
     #[test]

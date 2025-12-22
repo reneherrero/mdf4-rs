@@ -18,7 +18,7 @@ impl ConversionBlock {
     /// # Returns
     /// A DecodedValue where numeric conversion types yield a Float and string conversion types yield a String.
     pub fn apply_decoded(&self, value: DecodedValue, file_data: &[u8]) -> Result<DecodedValue> {
-        match self.cc_type {
+        match self.conversion_type {
             ConversionType::Identity => Ok(value),
             ConversionType::Linear => linear::apply_linear(self, value),
             ConversionType::Rational => linear::apply_rational(self, value),

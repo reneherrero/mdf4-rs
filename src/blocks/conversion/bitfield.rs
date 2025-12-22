@@ -17,8 +17,8 @@ pub fn apply_bitfield_text(
     };
 
     let mut parts = Vec::new();
-    let masks = &block.cc_val;
-    let links = &block.cc_ref;
+    let masks = &block.values;
+    let links = &block.refs;
 
     for (i, &link_addr) in links.iter().enumerate() {
         if i >= masks.len() {
@@ -37,7 +37,7 @@ pub fn apply_bitfield_text(
                 resolved_conversion.apply_decoded(DecodedValue::UnsignedInteger(masked), &[])?;
             if let DecodedValue::String(s) = decoded_masked {
                 // Try to get the name from the resolved conversion
-                let part = if let Some(name) = resolved_conversion.cc_tx_name {
+                let part = if let Some(name) = resolved_conversion.name_addr {
                     if let Some(name_text) = read_string_block(file_data, name)? {
                         format!("{} = {}", name_text, s)
                     } else {
@@ -76,7 +76,7 @@ pub fn apply_bitfield_text(
         let decoded_masked =
             nested.apply_decoded(DecodedValue::UnsignedInteger(masked), file_data)?;
         if let DecodedValue::String(s) = decoded_masked {
-            let part = if let Some(name_ptr) = nested.cc_tx_name {
+            let part = if let Some(name_ptr) = nested.name_addr {
                 if let Some(name) = read_string_block(file_data, name_ptr)? {
                     format!("{} = {}", name, s)
                 } else {

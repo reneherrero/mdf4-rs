@@ -69,3 +69,23 @@ impl ConversionType {
         }
     }
 }
+
+impl core::fmt::Display for ConversionType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ConversionType::Identity => write!(f, "identity"),
+            ConversionType::Linear => write!(f, "linear"),
+            ConversionType::Rational => write!(f, "rational"),
+            ConversionType::Algebraic => write!(f, "algebraic"),
+            ConversionType::TableLookupInterp => write!(f, "table (interpolated)"),
+            ConversionType::TableLookupNoInterp => write!(f, "table"),
+            ConversionType::RangeLookup => write!(f, "range lookup"),
+            ConversionType::ValueToText => write!(f, "value to text"),
+            ConversionType::RangeToText => write!(f, "range to text"),
+            ConversionType::TextToValue => write!(f, "text to value"),
+            ConversionType::TextToText => write!(f, "text to text"),
+            ConversionType::BitfieldText => write!(f, "bitfield text"),
+            ConversionType::Unknown(v) => write!(f, "unknown({})", v),
+        }
+    }
+}

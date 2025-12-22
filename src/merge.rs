@@ -8,7 +8,7 @@ use crate::{
     writer::MdfWriter,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ChannelMeta {
     name: Option<String>,
     data_type: DataType,
@@ -18,9 +18,9 @@ struct ChannelMeta {
     channel_type: u8,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct GroupMeta {
-    record_id_len: u8,
+    record_id_size: u8,
     channels: Vec<ChannelMeta>,
 }
 
@@ -33,7 +33,7 @@ fn collect_groups(file: &MdfFile) -> Result<Vec<MergedGroup>> {
     let mut groups = Vec::new();
     let mmap = &file.mmap;
     for dg in &file.data_groups {
-        let record_id_len = dg.block.record_id_len;
+        let record_id_size = dg.block.record_id_size;
         for cg in &dg.channel_groups {
             let mut metas = Vec::new();
             for ch in &cg.raw_channels {
@@ -52,14 +52,14 @@ fn collect_groups(file: &MdfFile) -> Result<Vec<MergedGroup>> {
                 let iter = ch.records(dg, cg, mmap)?;
                 for rec in iter {
                     let bytes = rec?;
-                    let val = decode_channel_value(bytes, record_id_len as usize, &ch.block)
+                    let val = decode_channel_value(bytes, record_id_size as usize, &ch.block)
                         .unwrap_or(DecodedValue::Unknown);
                     data[idx].push(val);
                 }
             }
             groups.push(MergedGroup {
                 meta: GroupMeta {
-                    record_id_len,
+                    record_id_size,
                     channels: metas,
                 },
                 data,
@@ -118,7 +118,7 @@ pub fn merge_files(output: &str, first: &str, second: &str) -> Result<()> {
             })?;
             last_cn = Some(id);
         }
-        writer.start_data_block_for_cg(&cg_id, group.meta.record_id_len)?;
+        writer.start_data_block_for_cg(&cg_id, group.meta.record_id_size)?;
         let record_count = group.data.first().map(|v| v.len()).unwrap_or(0);
         for i in 0..record_count {
             let mut vals = Vec::new();

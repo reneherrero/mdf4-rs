@@ -1,4 +1,12 @@
 // blocks/common.rs
+//! Common types, traits, and helper functions for MDF block parsing.
+//!
+//! This module provides:
+//! - [`BlockHeader`]: The 24-byte header present in all MDF blocks
+//! - [`BlockParse`]: Trait for parsing blocks from bytes
+//! - [`DataType`]: Enum representing MDF data types
+//! - Byte parsing helper functions to reduce code duplication
+
 use crate::{
     Error, Result,
     blocks::{metadata_block::MetadataBlock, text_block::TextBlock},
@@ -7,24 +15,165 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+// ============================================================================
+// Byte Parsing Helpers
+// ============================================================================
+
+/// Read a u64 from a byte slice at the given offset (little-endian).
+///
+/// # Panics
+/// Panics if `offset + 8 > bytes.len()`. Use `read_u64_checked` for fallible version.
+#[inline]
+pub fn read_u64(bytes: &[u8], offset: usize) -> u64 {
+    u64::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+        bytes[offset + 4],
+        bytes[offset + 5],
+        bytes[offset + 6],
+        bytes[offset + 7],
+    ])
+}
+
+/// Read a u32 from a byte slice at the given offset (little-endian).
+#[inline]
+pub fn read_u32(bytes: &[u8], offset: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+    ])
+}
+
+/// Read a u16 from a byte slice at the given offset (little-endian).
+#[inline]
+pub fn read_u16(bytes: &[u8], offset: usize) -> u16 {
+    u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
+}
+
+/// Read an f64 from a byte slice at the given offset (little-endian).
+#[inline]
+pub fn read_f64(bytes: &[u8], offset: usize) -> f64 {
+    f64::from_le_bytes([
+        bytes[offset],
+        bytes[offset + 1],
+        bytes[offset + 2],
+        bytes[offset + 3],
+        bytes[offset + 4],
+        bytes[offset + 5],
+        bytes[offset + 6],
+        bytes[offset + 7],
+    ])
+}
+
+/// Read a u8 from a byte slice at the given offset.
+#[inline]
+pub fn read_u8(bytes: &[u8], offset: usize) -> u8 {
+    bytes[offset]
+}
+
+// ============================================================================
+// Validation Helpers
+// ============================================================================
+
+/// Validate that a buffer has at least `expected` bytes.
+///
+/// Returns `Err(TooShortBuffer)` if the buffer is too small.
+#[inline]
+pub fn validate_buffer_size(bytes: &[u8], expected: usize) -> Result<()> {
+    if bytes.len() < expected {
+        return Err(Error::TooShortBuffer {
+            actual: bytes.len(),
+            expected,
+            file: file!(),
+            line: line!(),
+        });
+    }
+    Ok(())
+}
+
+/// Validate that a block header has the expected ID.
+#[inline]
+pub fn validate_block_id(header: &BlockHeader, expected_id: &str) -> Result<()> {
+    if header.id != expected_id {
+        return Err(Error::BlockSerializationError(format!(
+            "Block must have ID '{}', found '{}'",
+            expected_id, header.id
+        )));
+    }
+    Ok(())
+}
+
+/// Validate that a block header has the expected length.
+#[inline]
+pub fn validate_block_length(header: &BlockHeader, expected: u64) -> Result<()> {
+    if header.length != expected {
+        return Err(Error::BlockSerializationError(format!(
+            "Block must have length={}, found {}",
+            expected, header.length
+        )));
+    }
+    Ok(())
+}
+
+/// Assert that a buffer size is 8-byte aligned (debug builds only).
+#[inline]
+pub fn debug_assert_aligned(size: usize) {
+    debug_assert_eq!(size % 8, 0, "Block size {} is not 8-byte aligned", size);
+}
+
+/// Calculate padding needed to reach 8-byte alignment.
+#[inline]
+pub const fn padding_to_align_8(size: usize) -> usize {
+    (8 - (size % 8)) % 8
+}
+
+/// Safely convert a u64 offset/address to usize for indexing.
+///
+/// On 64-bit systems, this is always safe. On 32-bit systems, returns an error
+/// if the value exceeds `usize::MAX`, preventing potential overflow issues.
+///
+/// # Arguments
+/// * `value` - The u64 value to convert (typically a file offset or address).
+/// * `context` - Description of what the value represents (for error messages).
+///
+/// # Returns
+/// The value as `usize`, or an error if conversion would overflow.
+#[inline]
+pub fn u64_to_usize(value: u64, context: &str) -> Result<usize> {
+    usize::try_from(value).map_err(|_| {
+        Error::BlockSerializationError(format!(
+            "{} value {} exceeds maximum addressable size on this platform",
+            context, value
+        ))
+    })
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockHeader {
-    pub id: String,     // 4-byte string
-    pub reserved0: u32, // 4 bytes
-    pub block_len: u64, // 8 bytes
-    pub links_nr: u64,  // 8 bytes
+    /// 4-byte block type identifier (e.g., "##HD", "##DG").
+    pub id: String,
+    /// Reserved field, always 0.
+    pub reserved: u32,
+    /// Total length of the block in bytes, including this header.
+    pub length: u64,
+    /// Number of link fields in this block.
+    pub link_count: u64,
 }
 
 impl Default for BlockHeader {
-    /// Returns a BlockHeader with id 'UNSET' and block_len 0 as a placeholder.
+    /// Returns a BlockHeader with id 'UNSET' and length 0 as a placeholder.
     /// This is not a valid MDF block header and should be replaced before writing.
     fn default() -> Self {
         BlockHeader {
-            id: String::from("UNSET"), // Placeholder, must be set by user
-            reserved0: 0,
-            block_len: 0, // Placeholder, must be set by user
-            links_nr: 0,
+            id: String::from("UNSET"),
+            reserved: 0,
+            length: 0,
+            link_count: 0,
         }
     }
 }
@@ -34,44 +183,33 @@ impl BlockHeader {
     ///
     /// The BlockHeader is always 24 bytes and consists of:
     /// - id: 4 bytes (ASCII characters, must be exactly 4 bytes)
-    /// - reserved0: 4 bytes (always 0)
-    /// - block_len: 8 bytes (total length of the block including this header)
-    /// - links_nr: 8 bytes (number of links in this block)
+    /// - reserved: 4 bytes (always 0)
+    /// - length: 8 bytes (total length of the block including this header)
+    /// - link_count: 8 bytes (number of links in this block)
     ///
     /// # Returns
     /// - `Ok(Vec<u8>)` containing the serialized block header
-    /// - `Err(MdfError)` if serialization fails
+    /// - `Err(Error)` if serialization fails
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        // Create a buffer with exactly 24 bytes capacity
         let mut buffer = Vec::with_capacity(24);
 
         // 1. Write the ID field (4 bytes)
-        // The ID must be exactly 4 bytes - truncate or pad as needed
         let id_bytes = self.id.as_bytes();
-        let mut id_field = [0u8; 4]; // Initialize with zeros for padding
-
-        // Copy either all bytes or first 4 bytes of ID
+        let mut id_field = [0u8; 4];
         let id_len = core::cmp::min(id_bytes.len(), 4);
         id_field[..id_len].copy_from_slice(&id_bytes[..id_len]);
         buffer.extend_from_slice(&id_field);
 
-        // 2. Write reserved0 field (4 bytes)
-        buffer.extend_from_slice(&self.reserved0.to_le_bytes());
+        // 2. Write reserved field (4 bytes)
+        buffer.extend_from_slice(&self.reserved.to_le_bytes());
 
-        // 3. Write block_len field (8 bytes)
-        buffer.extend_from_slice(&self.block_len.to_le_bytes());
+        // 3. Write length field (8 bytes)
+        buffer.extend_from_slice(&self.length.to_le_bytes());
 
-        // 4. Write links_nr field (8 bytes)
-        buffer.extend_from_slice(&self.links_nr.to_le_bytes());
+        // 4. Write link_count field (8 bytes)
+        buffer.extend_from_slice(&self.link_count.to_le_bytes());
 
-        // Verify buffer is exactly 24 bytes
-        if buffer.len() != 24 {
-            return Err(Error::BlockSerializationError(format!(
-                "BlockHeader must be exactly 24 bytes, got {}",
-                buffer.len()
-            )));
-        }
-
+        debug_assert_eq!(buffer.len(), 24);
         Ok(buffer)
     }
 
@@ -84,20 +222,18 @@ impl BlockHeader {
     /// A [`BlockHeader`] on success or [`Error::TooShortBuffer`] when the
     /// slice is smaller than 24 bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        let expected_bytes = 24;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
+        validate_buffer_size(bytes, 24)?;
+
+        let id = match core::str::from_utf8(&bytes[0..4]) {
+            Ok(s) => String::from(s),
+            Err(_) => String::from_utf8_lossy(&bytes[0..4]).into_owned(),
+        };
+
         Ok(Self {
-            id: String::from_utf8_lossy(&bytes[0..4]).to_string(),
-            reserved0: u32::from_le_bytes(bytes[4..8].try_into().unwrap()),
-            block_len: u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-            links_nr: u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            id,
+            reserved: read_u32(bytes, 4),
+            length: read_u64(bytes, 8),
+            link_count: read_u64(bytes, 16),
         })
     }
 }
@@ -119,7 +255,7 @@ pub trait BlockParse<'a>: Sized {
     fn from_bytes(bytes: &'a [u8]) -> Result<Self>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum DataType {
     UnsignedIntegerLE,
@@ -223,6 +359,31 @@ impl DataType {
     }
 }
 
+impl core::fmt::Display for DataType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            DataType::UnsignedIntegerLE => write!(f, "uint (LE)"),
+            DataType::UnsignedIntegerBE => write!(f, "uint (BE)"),
+            DataType::SignedIntegerLE => write!(f, "int (LE)"),
+            DataType::SignedIntegerBE => write!(f, "int (BE)"),
+            DataType::FloatLE => write!(f, "float (LE)"),
+            DataType::FloatBE => write!(f, "float (BE)"),
+            DataType::StringLatin1 => write!(f, "string (Latin-1)"),
+            DataType::StringUtf8 => write!(f, "string (UTF-8)"),
+            DataType::StringUtf16LE => write!(f, "string (UTF-16 LE)"),
+            DataType::StringUtf16BE => write!(f, "string (UTF-16 BE)"),
+            DataType::ByteArray => write!(f, "byte array"),
+            DataType::MimeSample => write!(f, "MIME sample"),
+            DataType::MimeStream => write!(f, "MIME stream"),
+            DataType::CanOpenDate => write!(f, "CANopen date"),
+            DataType::CanOpenTime => write!(f, "CANopen time"),
+            DataType::ComplexLE => write!(f, "complex (LE)"),
+            DataType::ComplexBE => write!(f, "complex (BE)"),
+            DataType::Unknown(_) => write!(f, "unknown"),
+        }
+    }
+}
+
 /// Read a text or metadata block at `address` and return its contents.
 ///
 /// # Arguments
@@ -237,7 +398,8 @@ pub fn read_string_block(mmap: &[u8], address: u64) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    let offset = address as usize;
+    let offset = u64_to_usize(address, "block address")?;
+    validate_buffer_size(mmap, offset + 24)?;
     let header = BlockHeader::from_bytes(&mmap[offset..offset + 24])?;
 
     match header.id.as_str() {

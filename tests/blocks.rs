@@ -8,9 +8,9 @@ use mdf4_rs::{DataType, Result};
 fn header(id: &str, len: u64, links: u64) -> BlockHeader {
     BlockHeader {
         id: id.to_string(),
-        reserved0: 0,
-        block_len: len,
-        links_nr: links,
+        reserved: 0,
+        length: len,
+        link_count: links,
     }
 }
 
@@ -20,8 +20,8 @@ fn block_header_roundtrip() -> Result<()> {
     let bytes = h.to_bytes()?;
     let parsed = BlockHeader::from_bytes(&bytes)?;
     assert_eq!(parsed.id, "TEST");
-    assert_eq!(parsed.block_len, 64);
-    assert_eq!(parsed.links_nr, 2);
+    assert_eq!(parsed.length, 64);
+    assert_eq!(parsed.link_count, 2);
     Ok(())
 }
 
@@ -41,7 +41,7 @@ fn metadata_block_parse() -> Result<()> {
     let needs_null = true;
     let base_len = 24 + xml.len() + if needs_null { 1 } else { 0 };
     let padding = (8 - (base_len % 8)) % 8;
-    h.block_len = (base_len + padding) as u64;
+    h.length = (base_len + padding) as u64;
     let mut bytes = h.to_bytes()?;
     bytes.extend_from_slice(xml.as_bytes());
     if needs_null {
@@ -66,11 +66,11 @@ fn data_block_parse() -> Result<()> {
 
 #[test]
 fn data_list_block_roundtrip() -> Result<()> {
-    let dl = DataListBlock::new_equal(vec![0x10, 0x20], 8);
+    let dl = DataListBlock::new_equal_length(vec![0x10, 0x20], 8);
     let bytes = dl.to_bytes()?;
     let parsed = DataListBlock::from_bytes(&bytes)?;
-    assert_eq!(parsed.data_links, vec![0x10, 0x20]);
-    assert_eq!(parsed.data_block_len, Some(8));
+    assert_eq!(parsed.data_block_addrs, vec![0x10, 0x20]);
+    assert_eq!(parsed.equal_length, Some(8));
     Ok(())
 }
 
@@ -129,7 +129,7 @@ fn data_group_block_roundtrip() -> Result<()> {
     let dg = DataGroupBlock::default();
     let bytes = dg.to_bytes()?;
     let parsed = DataGroupBlock::from_bytes(&bytes)?;
-    assert_eq!(parsed.record_id_len, dg.record_id_len);
+    assert_eq!(parsed.record_id_size, dg.record_id_size);
     Ok(())
 }
 
@@ -138,7 +138,7 @@ fn channel_group_block_roundtrip() -> Result<()> {
     let cg = ChannelGroupBlock::default();
     let bytes = cg.to_bytes()?;
     let parsed = ChannelGroupBlock::from_bytes(&bytes)?;
-    assert_eq!(parsed.samples_byte_nr, cg.samples_byte_nr);
+    assert_eq!(parsed.record_size, cg.record_size);
     Ok(())
 }
 

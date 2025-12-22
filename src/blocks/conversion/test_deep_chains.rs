@@ -71,9 +71,9 @@ mod tests {
         assert!(result.is_ok(), "Deep chain resolution should succeed");
 
         // Debug output
-        println!("Root conversion type: {:?}", root_conv.cc_type);
-        println!("Root cc_ref: {:?}", root_conv.cc_ref);
-        println!("Root cc_val: {:?}", root_conv.cc_val);
+        println!("Root conversion type: {:?}", root_conv.conversion_type);
+        println!("Root refs: {:?}", root_conv.refs);
+        println!("Root values: {:?}", root_conv.values);
         println!("Resolved texts: {:?}", root_conv.resolved_texts.is_some());
         println!(
             "Resolved conversions: {:?}",
@@ -249,37 +249,37 @@ mod tests {
     // Helper function to create a test conversion block
     fn create_test_conversion_block(
         conv_type: ConversionType,
-        cc_val: Vec<f64>,
-        cc_ref: Vec<usize>,
+        values: Vec<f64>,
+        refs: Vec<usize>,
     ) -> Vec<u8> {
         let mut block = Vec::new();
 
         // Block header (24 bytes)
         let header = BlockHeader {
             id: "##CC".to_string(),
-            reserved0: 0,
-            block_len: (24 + 4 * 8 + cc_ref.len() * 8 + 8 + cc_val.len() * 8) as u64,
-            links_nr: (4 + cc_ref.len()) as u64,
+            reserved: 0,
+            length: (24 + 4 * 8 + refs.len() * 8 + 8 + values.len() * 8) as u64,
+            link_count: (4 + refs.len()) as u64,
         };
         block.extend_from_slice(&header.to_bytes().unwrap());
 
-        // Links section (4 fixed + cc_ref.len() variable)
+        // Links section (4 fixed + refs.len() variable)
         for _ in 0..4 {
             block.extend_from_slice(&0u64.to_le_bytes()); // Fixed links
         }
-        for &ref_addr in &cc_ref {
+        for &ref_addr in &refs {
             block.extend_from_slice(&(ref_addr as u64).to_le_bytes());
         }
 
         // Data section
-        block.push(conv_type.to_u8()); // cc_type
-        block.push(0); // cc_precision
-        block.extend_from_slice(&0u16.to_le_bytes()); // cc_flags
-        block.extend_from_slice(&(cc_ref.len() as u16).to_le_bytes()); // cc_ref_count
-        block.extend_from_slice(&(cc_val.len() as u16).to_le_bytes()); // cc_val_count
+        block.push(conv_type.to_u8()); // conversion_type
+        block.push(0); // precision
+        block.extend_from_slice(&0u16.to_le_bytes()); // flags
+        block.extend_from_slice(&(refs.len() as u16).to_le_bytes()); // ref_count
+        block.extend_from_slice(&(values.len() as u16).to_le_bytes()); // value_count
 
-        // cc_val values
-        for val in cc_val {
+        // values
+        for val in values {
             block.extend_from_slice(&val.to_le_bytes());
         }
 
@@ -293,9 +293,9 @@ mod tests {
         // Text block header
         let header = BlockHeader {
             id: "##TX".to_string(),
-            reserved0: 0,
-            block_len: (24 + text.len()) as u64,
-            links_nr: 0,
+            reserved: 0,
+            length: (24 + text.len()) as u64,
+            link_count: 0,
         };
         block.extend_from_slice(&header.to_bytes().unwrap());
 

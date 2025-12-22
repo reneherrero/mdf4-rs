@@ -1,83 +1,69 @@
+use super::SI_BLOCK_SIZE;
+#[cfg(feature = "std")]
+use crate::blocks::common::u64_to_usize;
 use crate::{
-    Error, Result,
-    blocks::common::{BlockHeader, BlockParse},
+    Result,
+    blocks::common::{
+        BlockHeader, BlockParse, debug_assert_aligned, read_u8, read_u64, validate_buffer_size,
+    },
 };
 
-/// Represents an SIBLOCK (“##SI”) from the MDF4 file.
+/// Source Information Block (##SI) - describes the source of acquired data.
 ///
-/// - Links:
-///   • si_tx_name    LINK → TXBLOCK (source name)  
-///   • si_tx_path    LINK → TXBLOCK (tool-specific path)  
-///   • si_md_comment LINK → TXBLOCK/MDBLOCK (additional XML/text)
-/// - Data:
-///   • si_type      UINT8 (0=OTHER,1=ECU,2=BUS,3=I/O,4=TOOL,5=USER)  
-///   • si_bus_type  UINT8 (0=NONE,1=OTHER,2=CAN,3=LIN,…,8=USB)  
-///   • si_flags     UINT8 (bit 0 = simulated)  
-///   • si_reserved  BYTE\[5\] (padding)
+/// A source block identifies where data comes from (ECU, bus, I/O device, etc.)
+/// and is typically linked from channel groups or channels.
 #[derive(Debug, Clone)]
 pub struct SourceBlock {
     pub header: BlockHeader,
-    /// Link to a TXBLOCK containing the human-readable source name
+    /// Link to text block containing the source name.
     pub name_addr: u64,
-    /// Link to a TXBLOCK containing a tool-specific path/namespace
+    /// Link to text block containing a tool-specific path.
     pub path_addr: u64,
-    /// Link to TXBLOCK or MDBLOCK with extended comment/XML
+    /// Link to text/metadata block with extended comment.
     pub comment_addr: u64,
-
+    /// Source type (see [`SourceType`]).
     pub source_type: u8,
+    /// Bus type (see [`BusType`]).
     pub bus_type: u8,
+    /// Flags (bit 0 = simulated source).
     pub flags: u8,
-    // 5 bytes reserved for 8-byte alignment
 }
 
 impl BlockParse<'_> for SourceBlock {
     const ID: &'static str = "##SI";
-    /// Parse an SIBLOCK from its raw bytes (starting at the “##SI…” header).
+
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let header = Self::parse_header(bytes)?;
 
-        // Link section: one LINK (u64 LE) per link_count (max 3 meaningful)
-        let mut name_addr = 0;
-        let mut path_addr = 0;
-        let mut comment_addr = 0;
-        let link_count = header.links_nr as usize;
-        for i in 0..link_count.min(3) {
-            let off = 24 + i * 8;
-            let link = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
-            match i {
-                0 => name_addr = link,
-                1 => path_addr = link,
-                2 => comment_addr = link,
-                _ => {}
-            }
-        }
-
-        // Data section immediately after all links:
-
+        let link_count = header.link_count as usize;
         let data_start = 24 + link_count * 8;
+        validate_buffer_size(bytes, data_start + 3)?;
 
-        let expected_bytes = data_start + 2;
-        if bytes.len() < expected_bytes {
-            return Err(Error::TooShortBuffer {
-                actual: bytes.len(),
-                expected: expected_bytes,
-                file: file!(),
-                line: line!(),
-            });
-        }
-        let source_type = bytes[data_start];
-        let bus_type = bytes[data_start + 1];
-        let flags = bytes[data_start + 2];
-        // bytes [data_start+3 .. data_start+8] are reserved/padding
+        // Read links (up to 3)
+        let name_addr = if link_count > 0 {
+            read_u64(bytes, 24)
+        } else {
+            0
+        };
+        let path_addr = if link_count > 1 {
+            read_u64(bytes, 32)
+        } else {
+            0
+        };
+        let comment_addr = if link_count > 2 {
+            read_u64(bytes, 40)
+        } else {
+            0
+        };
 
-        Ok(SourceBlock {
+        Ok(Self {
             header,
             name_addr,
             path_addr,
             comment_addr,
-            source_type,
-            bus_type,
-            flags,
+            source_type: read_u8(bytes, data_start),
+            bus_type: read_u8(bytes, data_start + 1),
+            flags: read_u8(bytes, data_start + 2),
         })
     }
 }
@@ -89,11 +75,11 @@ pub enum SourceType {
     /// Other source type
     Other = 0,
     /// Electronic Control Unit
-    Ecu = 1,
+    ECU = 1,
     /// Bus (CAN, LIN, etc.)
     Bus = 2,
     /// I/O device
-    Io = 3,
+    IO = 3,
     /// Tool
     Tool = 4,
     /// User-defined
@@ -109,11 +95,11 @@ pub enum BusType {
     /// Other bus type
     Other = 1,
     /// CAN bus
-    Can = 2,
+    CAN = 2,
     /// LIN bus
-    Lin = 3,
+    LIN = 3,
     /// MOST bus
-    Most = 4,
+    MOST = 4,
     /// FlexRay
     FlexRay = 5,
     /// K-Line
@@ -121,22 +107,18 @@ pub enum BusType {
     /// Ethernet
     Ethernet = 7,
     /// USB
-    Usb = 8,
+    USB = 8,
 }
 
 impl SourceBlock {
-    /// Create a new SourceBlock for an ECU with CAN bus.
-    ///
-    /// # Arguments
-    /// * `source_type` - Type of source (ECU, Bus, etc.)
-    /// * `bus_type` - Type of bus (CAN, LIN, etc.)
+    /// Creates a new SourceBlock with the specified source and bus types.
     pub fn new(source_type: SourceType, bus_type: BusType) -> Self {
         Self {
             header: BlockHeader {
                 id: alloc::string::String::from("##SI"),
-                reserved0: 0,
-                block_len: 56, // 24 header + 3*8 links + 8 data
-                links_nr: 3,
+                reserved: 0,
+                length: SI_BLOCK_SIZE as u64,
+                link_count: 3,
             },
             name_addr: 0,
             path_addr: 0,
@@ -147,26 +129,26 @@ impl SourceBlock {
         }
     }
 
-    /// Create a new SourceBlock for a CAN ECU.
+    /// Creates a new SourceBlock for a CAN ECU.
     pub fn can_ecu() -> Self {
-        Self::new(SourceType::Ecu, BusType::Can)
+        Self::new(SourceType::ECU, BusType::CAN)
     }
 
-    /// Create a new SourceBlock for a CAN bus.
+    /// Creates a new SourceBlock for a CAN bus.
     pub fn can_bus() -> Self {
-        Self::new(SourceType::Bus, BusType::Can)
+        Self::new(SourceType::Bus, BusType::CAN)
     }
 
-    /// Serialize the SourceBlock to bytes.
+    /// Serializes the SourceBlock to bytes according to MDF 4.1 specification.
     pub fn to_bytes(&self) -> Result<alloc::vec::Vec<u8>> {
         use alloc::vec::Vec;
 
-        let mut buffer = Vec::with_capacity(56);
+        let mut buffer = Vec::with_capacity(SI_BLOCK_SIZE);
 
         // Header (24 bytes)
         buffer.extend_from_slice(&self.header.to_bytes()?);
 
-        // Links (24 bytes = 3 * 8)
+        // Links (24 bytes)
         buffer.extend_from_slice(&self.name_addr.to_le_bytes());
         buffer.extend_from_slice(&self.path_addr.to_le_bytes());
         buffer.extend_from_slice(&self.comment_addr.to_le_bytes());
@@ -175,8 +157,9 @@ impl SourceBlock {
         buffer.push(self.source_type);
         buffer.push(self.bus_type);
         buffer.push(self.flags);
-        buffer.extend_from_slice(&[0u8; 5]); // reserved padding
+        buffer.extend_from_slice(&[0u8; 5]); // reserved
 
+        debug_assert_aligned(buffer.len());
         Ok(buffer)
     }
 }
@@ -195,11 +178,13 @@ impl Default for SourceBlock {
 ///
 /// # Returns
 /// The parsed [`SourceBlock`] or an [`Error`] if decoding fails.
+#[cfg(feature = "std")]
 pub fn read_source_block(mmap: &[u8], address: u64) -> Result<SourceBlock> {
-    let start = address as usize;
+    let start = u64_to_usize(address, "source block address")?;
+    validate_buffer_size(mmap, start + 24)?;
     let header = BlockHeader::from_bytes(&mmap[start..start + 24])?;
-    // We know the total length from the header:
-    let total_len = header.block_len as usize;
+    let total_len = u64_to_usize(header.length, "source block length")?;
+    validate_buffer_size(mmap, start + total_len)?;
     let slice = &mmap[start..start + total_len];
     SourceBlock::from_bytes(slice)
 }

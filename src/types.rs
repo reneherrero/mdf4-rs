@@ -70,3 +70,18 @@ impl DecodedValue {
         }
     }
 }
+
+impl core::fmt::Display for DecodedValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            DecodedValue::UnsignedInteger(v) => write!(f, "{}", v),
+            DecodedValue::SignedInteger(v) => write!(f, "{}", v),
+            DecodedValue::Float(v) => write!(f, "{}", v),
+            DecodedValue::String(s) => write!(f, "{}", s),
+            DecodedValue::ByteArray(b) => write!(f, "[{} bytes]", b.len()),
+            DecodedValue::MimeSample(b) => write!(f, "[MIME sample: {} bytes]", b.len()),
+            DecodedValue::MimeStream(b) => write!(f, "[MIME stream: {} bytes]", b.len()),
+            DecodedValue::Unknown => write!(f, "<unknown>"),
+        }
+    }
+}

@@ -18,8 +18,8 @@ pub fn extract_numeric(value: &DecodedValue) -> Option<f64> {
 /// Apply a linear conversion.
 pub fn apply_linear(block: &ConversionBlock, value: DecodedValue) -> Result<DecodedValue> {
     if let Some(raw) = extract_numeric(&value) {
-        if block.cc_val.len() >= 2 {
-            let result = block.cc_val[0] + block.cc_val[1] * raw;
+        if block.values.len() >= 2 {
+            let result = block.values[0] + block.values[1] * raw;
             Ok(DecodedValue::Float(result))
         } else {
             Ok(DecodedValue::Float(raw))
@@ -32,13 +32,13 @@ pub fn apply_linear(block: &ConversionBlock, value: DecodedValue) -> Result<Deco
 /// Apply a rational conversion.
 pub fn apply_rational(block: &ConversionBlock, value: DecodedValue) -> Result<DecodedValue> {
     if let Some(raw) = extract_numeric(&value) {
-        if block.cc_val.len() >= 6 {
-            let p1 = block.cc_val[0];
-            let p2 = block.cc_val[1];
-            let p3 = block.cc_val[2];
-            let p4 = block.cc_val[3];
-            let p5 = block.cc_val[4];
-            let p6 = block.cc_val[5];
+        if block.values.len() >= 6 {
+            let p1 = block.values[0];
+            let p2 = block.values[1];
+            let p3 = block.values[2];
+            let p4 = block.values[3];
+            let p5 = block.values[4];
+            let p6 = block.values[5];
 
             let num = p1 * raw * raw + p2 * raw + p3;
             let den = p4 * raw * raw + p5 * raw + p6;

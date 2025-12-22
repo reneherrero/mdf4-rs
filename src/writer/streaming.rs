@@ -39,7 +39,7 @@
 ///
 /// The file remains in a valid state after each flush, with proper DT block
 /// sizes recorded. Final DL (Data List) blocks are created during finalization.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum FlushPolicy {
     /// Never auto-flush. Data is only flushed on explicit `flush()` or `finalize()` calls.
     /// This is the default behavior.

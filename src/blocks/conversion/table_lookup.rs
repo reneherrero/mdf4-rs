@@ -5,16 +5,16 @@ use crate::types::DecodedValue;
 use alloc::vec::Vec;
 
 /// General table lookup: either interpolated or nearest neighbour.
-/// `cc_val` must be `[key0, val0, key1, val1, …]`.
-pub fn lookup_table(cc_val: &[f64], raw: f64, interp: bool) -> Option<f64> {
-    let len = cc_val.len();
+/// `values` must be `[key0, val0, key1, val1, …]`.
+pub fn lookup_table(values: &[f64], raw: f64, interp: bool) -> Option<f64> {
+    let len = values.len();
     if len < 4 || len % 2 != 0 {
         return None;
     }
     let n = len / 2;
     let mut table = Vec::with_capacity(n);
     for i in 0..n {
-        table.push((cc_val[2 * i], cc_val[2 * i + 1]));
+        table.push((values[2 * i], values[2 * i + 1]));
     }
     if raw <= table[0].0 {
         return Some(table[0].1);
@@ -45,7 +45,7 @@ pub fn apply_table_lookup(
     interp: bool,
 ) -> Result<DecodedValue> {
     if let Some(raw) = extract_numeric(&value) {
-        let phys = lookup_table(&block.cc_val, raw, interp).unwrap_or(raw);
+        let phys = lookup_table(&block.values, raw, interp).unwrap_or(raw);
         Ok(DecodedValue::Float(phys))
     } else {
         Ok(value)
@@ -58,7 +58,7 @@ pub fn apply_range_lookup(block: &ConversionBlock, value: DecodedValue) -> Resul
             value,
             DecodedValue::UnsignedInteger(_) | DecodedValue::SignedInteger(_)
         );
-        let v = &block.cc_val;
+        let v = &block.values;
         if v.len() < 4 || (v.len() - 1) % 3 != 0 {
             return Ok(DecodedValue::Float(raw));
         }
