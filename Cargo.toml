@@ -1,6 +1,6 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.0-rc.1"
+version = "0.1.0-rc.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["mdf4-rs contributors"]
