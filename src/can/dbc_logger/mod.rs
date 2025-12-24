@@ -206,6 +206,125 @@ impl<'dbc> CanDbcLogger<'dbc, crate::writer::VecWriter> {
         self.flush_and_finalize()?;
         Ok(self.writer.into_inner().into_inner())
     }
+
+    /// Load an existing MDF4 file containing raw CAN frames for appending.
+    ///
+    /// This reads raw frames from an MDF4 file (created by RawCanLogger) and
+    /// decodes them using the provided DBC, allowing you to append new frames.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mdf4_rs::can::CanDbcLogger;
+    ///
+    /// let dbc = dbc_rs::Dbc::from_file("vehicle.dbc")?;
+    ///
+    /// // Load existing raw capture and decode with DBC
+    /// let mut logger = CanDbcLogger::from_raw_mdf4("existing.mf4", &dbc)?;
+    ///
+    /// // Append new frames
+    /// let last_ts = logger.last_timestamp_us();
+    /// logger.log(0x100, last_ts + 1000, &[0x01, 0x02]);
+    ///
+    /// // Save decoded output
+    /// let bytes = logger.finalize()?;
+    /// std::fs::write("decoded.mf4", bytes)?;
+    /// ```
+    #[cfg(feature = "std")]
+    pub fn from_raw_mdf4(path: &str, dbc: &'dbc dbc_rs::Dbc) -> crate::Result<Self> {
+        Self::from_raw_mdf4_with_config(path, dbc, CanDbcLoggerConfig::default())
+    }
+
+    /// Load an existing MDF4 file with custom configuration.
+    #[cfg(feature = "std")]
+    pub fn from_raw_mdf4_with_config(
+        path: &str,
+        dbc: &'dbc dbc_rs::Dbc,
+        config: CanDbcLoggerConfig,
+    ) -> crate::Result<Self> {
+        use crate::DecodedValue;
+        use crate::index::{FileRangeReader, MdfIndex};
+
+        let index = MdfIndex::from_file(path)?;
+        let mut reader = FileRangeReader::new(path)?;
+
+        let writer = crate::MdfWriter::from_writer(crate::writer::VecWriter::new());
+        let mut logger = Self::with_config(dbc, writer, config);
+
+        // Find ASAM CAN_DataFrame channel groups and read raw frames
+        for (group_idx, group) in index.channel_groups.iter().enumerate() {
+            let mut timestamp_ch = None;
+            let mut dataframe_ch = None;
+
+            for (ch_idx, channel) in group.channels.iter().enumerate() {
+                if let Some(name) = &channel.name {
+                    match name.as_str() {
+                        "Timestamp" => timestamp_ch = Some(ch_idx),
+                        "CAN_DataFrame" => dataframe_ch = Some(ch_idx),
+                        _ => {}
+                    }
+                }
+            }
+
+            let (ts_ch, df_ch) = match (timestamp_ch, dataframe_ch) {
+                (Some(t), Some(d)) => (t, d),
+                _ => continue,
+            };
+
+            let timestamps = index.read_channel_values(group_idx, ts_ch, &mut reader)?;
+            let dataframes = index.read_channel_values(group_idx, df_ch, &mut reader)?;
+
+            for (ts_val, df_val) in timestamps.iter().zip(dataframes.iter()) {
+                let timestamp_us = match ts_val {
+                    Some(DecodedValue::Float(s)) => (*s * 1_000_000.0) as u64,
+                    Some(DecodedValue::UnsignedInteger(us)) => *us,
+                    _ => continue,
+                };
+
+                let bytes = match df_val {
+                    Some(DecodedValue::ByteArray(b)) => b,
+                    _ => continue,
+                };
+
+                if bytes.len() < 5 {
+                    continue;
+                }
+
+                let raw_id = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let is_extended = (raw_id & 0x8000_0000) != 0;
+                let can_id = raw_id & 0x1FFF_FFFF;
+                let dlc = bytes[4];
+                let data_len = super::fd::dlc_to_len(dlc).min(bytes.len() - 5);
+                let data = &bytes[5..5 + data_len];
+
+                // Log through DBC decoder
+                if is_extended {
+                    logger.log_extended(can_id, timestamp_us, data);
+                } else {
+                    logger.log(can_id, timestamp_us, data);
+                }
+            }
+        }
+
+        Ok(logger)
+    }
+
+    /// Get the last timestamp in microseconds from loaded frames.
+    ///
+    /// Returns 0 if no frames have been logged.
+    pub fn last_timestamp_us(&self) -> u64 {
+        self.buffers
+            .values()
+            .flat_map(|buf| buf.timestamps.iter())
+            .copied()
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Get the total number of decoded frames.
+    pub fn total_frame_count(&self) -> usize {
+        self.buffers.values().map(|buf| buf.frame_count()).sum()
+    }
 }
 
 #[cfg(feature = "std")]

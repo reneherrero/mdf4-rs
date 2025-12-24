@@ -318,6 +318,140 @@ impl RawCanLogger<crate::writer::FileWriter> {
     }
 }
 
+#[cfg(feature = "std")]
+impl RawCanLogger<crate::writer::VecWriter> {
+    /// Load an existing MDF4 file for appending.
+    ///
+    /// This reads all frames from the existing file into memory, allowing you
+    /// to append new frames and then save to a new file.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use mdf4_rs::can::RawCanLogger;
+    ///
+    /// // Load existing capture
+    /// let mut logger = RawCanLogger::from_file("existing.mf4")?;
+    ///
+    /// // Append new frames (timestamps should continue from where the file left off)
+    /// let last_ts = logger.last_timestamp_us();
+    /// logger.log(0x100, last_ts + 1000, &[0x01, 0x02]);
+    ///
+    /// // Save to new file (or overwrite)
+    /// let bytes = logger.finalize()?;
+    /// std::fs::write("appended.mf4", bytes)?;
+    /// ```
+    pub fn from_file(path: &str) -> crate::Result<Self> {
+        Self::from_file_with_bus_name(path, "CAN")
+    }
+
+    /// Load an existing MDF4 file for appending with a custom bus name.
+    pub fn from_file_with_bus_name(path: &str, bus_name: &str) -> crate::Result<Self> {
+        use crate::DecodedValue;
+        use crate::index::{FileRangeReader, MdfIndex};
+
+        let index = MdfIndex::from_file(path)?;
+        let mut reader = FileRangeReader::new(path)?;
+
+        let mut logger = Self::with_bus_name(bus_name)?;
+
+        // Find ASAM CAN_DataFrame channel groups
+        for (group_idx, group) in index.channel_groups.iter().enumerate() {
+            // Look for Timestamp and CAN_DataFrame channels
+            let mut timestamp_ch = None;
+            let mut dataframe_ch = None;
+
+            for (ch_idx, channel) in group.channels.iter().enumerate() {
+                if let Some(name) = &channel.name {
+                    match name.as_str() {
+                        "Timestamp" => timestamp_ch = Some(ch_idx),
+                        "CAN_DataFrame" => dataframe_ch = Some(ch_idx),
+                        _ => {}
+                    }
+                }
+            }
+
+            let (ts_ch, df_ch) = match (timestamp_ch, dataframe_ch) {
+                (Some(t), Some(d)) => (t, d),
+                _ => continue, // Not an ASAM CAN group
+            };
+
+            // Read all records from this group
+            let timestamps = index.read_channel_values(group_idx, ts_ch, &mut reader)?;
+            let dataframes = index.read_channel_values(group_idx, df_ch, &mut reader)?;
+
+            for (ts_val, df_val) in timestamps.iter().zip(dataframes.iter()) {
+                // Parse timestamp (seconds as f64 -> microseconds)
+                let timestamp_us = match ts_val {
+                    Some(DecodedValue::Float(s)) => (*s * 1_000_000.0) as u64,
+                    Some(DecodedValue::UnsignedInteger(us)) => *us,
+                    _ => continue,
+                };
+
+                // Parse CAN_DataFrame ByteArray
+                let bytes = match df_val {
+                    Some(DecodedValue::ByteArray(b)) => b,
+                    _ => continue,
+                };
+
+                if bytes.len() < 5 {
+                    continue;
+                }
+
+                // Parse: ID(4 bytes LE) + DLC(1 byte) + Data(N bytes)
+                let raw_id = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let is_extended = (raw_id & 0x8000_0000) != 0;
+                let can_id = raw_id & 0x1FFF_FFFF;
+                let dlc = bytes[4];
+                let data_len = super::fd::dlc_to_len(dlc).min(bytes.len() - 5);
+
+                // Check for FD flags (present if data_len > 8 and there's an extra byte)
+                let (fd_flags, data_start) = if data_len > 8 && bytes.len() > 6 {
+                    (FdFlags::from_byte(bytes[5]), 6)
+                } else {
+                    (FdFlags::default(), 5)
+                };
+
+                let data = &bytes[data_start..data_start + data_len.min(bytes.len() - data_start)];
+                let is_fd = data_len > 8 || fd_flags.brs() || fd_flags.esi();
+
+                // Create frame and add to appropriate buffer
+                let frame = if is_fd {
+                    RawFrame::new_fd(timestamp_us, can_id, dlc, data, fd_flags, is_extended)
+                } else {
+                    RawFrame::new_classic(timestamp_us, can_id, dlc, data, is_extended)
+                };
+
+                logger
+                    .buffers
+                    .entry(frame.frame_type())
+                    .or_default()
+                    .push(frame);
+            }
+        }
+
+        Ok(logger)
+    }
+
+    /// Get the last timestamp in microseconds from loaded frames.
+    ///
+    /// Returns 0 if no frames have been logged.
+    /// Use this to continue timestamps when appending new frames.
+    pub fn last_timestamp_us(&self) -> u64 {
+        self.buffers
+            .values()
+            .flat_map(|frames| frames.iter())
+            .map(|f| (f.timestamp_s * 1_000_000.0) as u64)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Get the total number of frames loaded from file.
+    pub fn loaded_frame_count(&self) -> usize {
+        self.buffers.values().map(|b| b.len()).sum()
+    }
+}
+
 impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
     /// Set the CAN bus name for source metadata.
     ///
@@ -848,5 +982,48 @@ mod tests {
     fn test_bus_name() {
         let logger = RawCanLogger::with_bus_name("Vehicle_CAN").unwrap();
         assert_eq!(logger.bus_name, "Vehicle_CAN");
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn test_from_file_append() {
+        use std::io::Write;
+
+        // Create initial capture
+        let mut logger = RawCanLogger::new().unwrap();
+        logger.log(0x100, 1_000_000, &[0x01, 0x02, 0x03, 0x04]);
+        logger.log(0x100, 2_000_000, &[0x05, 0x06, 0x07, 0x08]);
+        logger.log(0x200, 1_500_000, &[0xAA, 0xBB]);
+
+        let initial_bytes = logger.finalize().unwrap();
+        assert!(!initial_bytes.is_empty());
+
+        // Write to temp file
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_append.mf4");
+        let mut file = std::fs::File::create(&temp_path).unwrap();
+        file.write_all(&initial_bytes).unwrap();
+        drop(file);
+
+        // Load and append
+        let mut logger = RawCanLogger::from_file(temp_path.to_str().unwrap()).unwrap();
+
+        // Verify loaded frames
+        assert_eq!(logger.loaded_frame_count(), 3);
+        assert_eq!(logger.last_timestamp_us(), 2_000_000);
+
+        // Append new frames
+        let next_ts = logger.last_timestamp_us() + 1_000_000;
+        logger.log(0x100, next_ts, &[0x11, 0x22, 0x33, 0x44]);
+        logger.log(0x300, next_ts + 500_000, &[0xFF]);
+
+        assert_eq!(logger.total_frame_count(), 5);
+
+        // Finalize and verify round-trip
+        let appended_bytes = logger.finalize().unwrap();
+        assert!(appended_bytes.len() > initial_bytes.len());
+
+        // Clean up
+        let _ = std::fs::remove_file(&temp_path);
     }
 }
