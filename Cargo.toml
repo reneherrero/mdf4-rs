@@ -1,6 +1,6 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["mdf4-rs contributors"]
@@ -48,7 +48,7 @@ optional = true
 [dev-dependencies]
 
 [dev-dependencies.criterion]
-version = "0.8"
+version = "0.5"
 
 [dev-dependencies.serde]
 version = "1.0"
