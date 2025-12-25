@@ -187,8 +187,8 @@ pub mod error;
 #[cfg(feature = "alloc")]
 pub mod writer;
 
-// CAN bus integration (requires alloc + dbc)
-#[cfg(all(feature = "alloc", feature = "dbc"))]
+// CAN bus integration (requires alloc, dbc-specific features gated inside)
+#[cfg(feature = "alloc")]
 pub mod can;
 
 // Modules requiring std (file I/O)

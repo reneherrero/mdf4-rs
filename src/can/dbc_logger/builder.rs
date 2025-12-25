@@ -40,16 +40,16 @@ impl Default for CanDbcLoggerConfig {
 }
 
 /// Builder for CanDbcLogger configuration.
-pub struct CanDbcLoggerBuilder<'dbc> {
-    pub(super) dbc: &'dbc dbc_rs::Dbc,
+pub struct CanDbcLoggerBuilder {
+    pub(super) dbc: dbc_rs::Dbc,
     pub(super) config: CanDbcLoggerConfig,
     pub(super) capacity: Option<usize>,
     pub(super) flush_policy: Option<FlushPolicy>,
 }
 
-impl<'dbc> CanDbcLoggerBuilder<'dbc> {
+impl CanDbcLoggerBuilder {
     /// Create a new builder with default configuration.
-    pub fn new(dbc: &'dbc dbc_rs::Dbc) -> Self {
+    pub fn new(dbc: dbc_rs::Dbc) -> Self {
         Self {
             dbc,
             config: CanDbcLoggerConfig::default(),
@@ -126,7 +126,7 @@ impl<'dbc> CanDbcLoggerBuilder<'dbc> {
     /// use mdf4_rs::can::CanDbcLogger;
     /// use mdf4_rs::FlushPolicy;
     ///
-    /// let mut logger = CanDbcLogger::builder(&dbc)
+    /// let mut logger = CanDbcLogger::builder(dbc)
     ///     .with_flush_policy(FlushPolicy::EveryNRecords(1000))
     ///     .build_file("output.mf4")?;
     /// ```
@@ -136,7 +136,7 @@ impl<'dbc> CanDbcLoggerBuilder<'dbc> {
     }
 
     /// Build the logger with in-memory output.
-    pub fn build(self) -> crate::Result<super::CanDbcLogger<'dbc, crate::writer::VecWriter>> {
+    pub fn build(self) -> crate::Result<super::CanDbcLogger<crate::writer::VecWriter>> {
         let mut writer = match self.capacity {
             Some(cap) => {
                 crate::MdfWriter::from_writer(crate::writer::VecWriter::with_capacity(cap))
@@ -158,7 +158,7 @@ impl<'dbc> CanDbcLoggerBuilder<'dbc> {
     pub fn build_file(
         self,
         path: &str,
-    ) -> crate::Result<super::CanDbcLogger<'dbc, crate::writer::FileWriter>> {
+    ) -> crate::Result<super::CanDbcLogger<crate::writer::FileWriter>> {
         let mut writer = match self.capacity {
             Some(cap) => crate::MdfWriter::new_with_capacity(path, cap)?,
             None => crate::MdfWriter::new(path)?,

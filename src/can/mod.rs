@@ -53,16 +53,20 @@
 //! let mdf_bytes = logger.finalize()?;
 //! ```
 
+// CanDbcLogger uses FastDbc which requires std + dbc
+#[cfg(all(feature = "std", feature = "dbc"))]
 mod dbc_compat;
+#[cfg(all(feature = "std", feature = "dbc"))]
 mod dbc_logger;
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "dbc"))]
 mod dbc_overlay;
 pub mod fd;
 mod raw_logger;
 mod timestamped_frame;
 
+#[cfg(all(feature = "std", feature = "dbc"))]
 pub use dbc_logger::{CanDbcLogger, CanDbcLoggerBuilder, CanDbcLoggerConfig};
-#[cfg(feature = "std")]
+#[cfg(all(feature = "std", feature = "dbc"))]
 pub use dbc_overlay::{DbcOverlayReader, DecodedFrame, OverlayStatistics, SignalValue};
 // FD constants and flags are always available
 pub use fd::{FdFlags, MAX_FD_DATA_LEN, dlc_to_len, len_to_dlc};
@@ -72,5 +76,6 @@ pub use fd::{FdFrame, SimpleFdFrame};
 pub use raw_logger::RawCanLogger;
 pub use timestamped_frame::TimestampedFrame;
 
-// Re-export commonly used dbc-rs types
+// Re-export commonly used dbc-rs types (requires dbc feature)
+#[cfg(feature = "dbc")]
 pub use dbc_rs::{ByteOrder, Dbc, DecodedSignal, Message, Signal};

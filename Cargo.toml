@@ -16,7 +16,7 @@ exclude = [".github/", "examples/", "tests/", "benches/"]
 
 [features]
 default = ["std", "can", "dbc"]
-std = ["alloc", "serde", "serde_json"]
+std = ["alloc", "serde", "serde_json", "dbc-rs?/std"]
 alloc = []
 serde = ["dep:serde"]
 can = ["dep:embedded-can"]
@@ -39,7 +39,7 @@ version = "0.4"
 optional = true
 
 [dependencies.dbc-rs]
-version = "0.1.4"
+version = "0.2"
 default-features = false
 features = ["alloc"]
 optional = true
@@ -48,7 +48,7 @@ optional = true
 [dev-dependencies]
 
 [dev-dependencies.criterion]
-version = "0.5"
+version = "0.8"
 
 [dev-dependencies.serde]
 version = "1.0"
@@ -58,9 +58,9 @@ features = ["derive"]
 version = "0.4"
 
 [dev-dependencies.dbc-rs]
-version = "0.1.3"
+version = "0.2"
 default-features = false
-features = ["alloc"]
+features = ["std"]
 
 [[bench]]
 name = "index_benchmark"

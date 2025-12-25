@@ -10,7 +10,7 @@ use super::COMPLETE_DBC;
 fn dbc_logger_basic() -> Result<()> {
     let dbc = Dbc::parse(COMPLETE_DBC).expect("Failed to parse DBC");
 
-    let mut logger = CanDbcLogger::builder(&dbc)
+    let mut logger = CanDbcLogger::builder(dbc.clone())
         .store_raw_values(false)
         .include_units(true)
         .build()?;
@@ -99,7 +99,7 @@ fn dbc_logger_basic() -> Result<()> {
 fn dbc_logger_with_raw_values() -> Result<()> {
     let dbc = Dbc::parse(COMPLETE_DBC).expect("Failed to parse DBC");
 
-    let mut logger = CanDbcLogger::builder(&dbc)
+    let mut logger = CanDbcLogger::builder(dbc.clone())
         .store_raw_values(true)
         .include_conversions(true)
         .build()?;

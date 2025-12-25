@@ -61,7 +61,7 @@ fn decoded_logging(
     frames: &[(u64, u32, [u8; 8])],
 ) -> Result<(), mdf4_rs::Error> {
     // Create logger with DBC - signals are decoded immediately
-    let mut logger = CanDbcLogger::builder(dbc)
+    let mut logger = CanDbcLogger::builder(dbc.clone())
         .store_raw_values(false) // Store physical values (f64)
         .include_units(true)
         .build()?;
@@ -184,7 +184,7 @@ fn streaming_logging(dbc: &dbc_rs::Dbc) -> Result<(), mdf4_rs::Error> {
     let path = std::env::temp_dir().join("streaming_can.mf4");
 
     // Create logger with flush policy
-    let mut logger = CanDbcLogger::builder(dbc)
+    let mut logger = CanDbcLogger::builder(dbc.clone())
         .with_flush_policy(FlushPolicy::EveryNRecords(100))
         .build_file(path.to_str().unwrap())?;
 

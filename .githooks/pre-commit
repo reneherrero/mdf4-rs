@@ -73,7 +73,7 @@ else
     FAILED=1
 fi
 
-# Check alloc+dbc compilation
+# Check alloc+dbc compilation (no CanDbcLogger, which requires std for FastDbc)
 echo -e "\n${YELLOW}Checking alloc+dbc compilation...${NC}"
 if run_cmd cargo check --quiet --no-default-features --features "alloc,dbc" 2>&1; then
     echo -e "${GREEN}✓ Compilation check passed (alloc+dbc)${NC}"

@@ -210,7 +210,7 @@ fn main() -> Result<()> {
     println!("\nSimulated {} CAN frames", frames.len());
 
     // Create logger
-    let mut logger = CanDbcLogger::new(&dbc)?;
+    let mut logger = CanDbcLogger::new(dbc)?;
 
     // Log all frames
     for tsf in &frames {
