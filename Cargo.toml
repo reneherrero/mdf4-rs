@@ -1,6 +1,6 @@
 [package]
 name = "mdf4-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["mdf4-rs contributors"]
@@ -39,7 +39,7 @@ version = "0.4"
 optional = true
 
 [dependencies.dbc-rs]
-version = "0.2"
+version = "0.2.2"
 default-features = false
 features = ["alloc"]
 optional = true
