@@ -220,7 +220,7 @@ pub use writer::MdfWriter;
 pub use writer::{FlushPolicy, StreamingConfig};
 
 #[cfg(feature = "std")]
-pub use channel::Channel;
+pub use channel::{Channel, ChannelValuesIter};
 #[cfg(feature = "std")]
 pub use channel_group::ChannelGroup;
 #[cfg(feature = "std")]
