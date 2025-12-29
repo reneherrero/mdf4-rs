@@ -1,4 +1,13 @@
-// Handling of DT blocks and record writing
+//! Data block writing and record encoding.
+//!
+//! This module handles the encoding and writing of measurement data records
+//! to MDF4 DT (Data) blocks. It provides:
+//!
+//! - Channel value encoding based on data type (integers, floats, byte arrays)
+//! - Record buffer management with configurable block sizes
+//! - Automatic DT block splitting when size limits are reached
+//! - Data list (DL) block creation for large datasets
+
 use alloc::format;
 use alloc::string::ToString;
 use alloc::vec;
@@ -228,21 +237,23 @@ impl<W: MdfWrite> MdfWriter<W> {
             dt.dt_positions.push(new_dt_pos);
         }
 
-        let dt = self.open_dts.get_mut(cg_id).unwrap();
-        if values.len() != dt.channels.len() {
-            return Err(Error::BlockSerializationError(
-                "value count mismatch".into(),
-            ));
-        }
+        // Validate and encode in scoped mutable borrow
+        let record_bytes = {
+            let dt = self.open_dts.get_mut(cg_id).unwrap();
+            if values.len() != dt.channels.len() {
+                return Err(Error::BlockSerializationError(
+                    "value count mismatch".into(),
+                ));
+            }
+            dt.record_buf.copy_from_slice(&dt.record_template);
+            encode_values(&dt.encoders, &mut dt.record_buf, values);
+            dt.record_count += 1;
+            dt.record_buf.len() as u64
+        }; // dt dropped here
 
-        dt.record_buf.copy_from_slice(&dt.record_template);
-        encode_values(&dt.encoders, &mut dt.record_buf, values);
-
-        let buf = dt.record_buf.clone();
-        let record_bytes = buf.len() as u64;
-        self.writer.write_all(&buf)?;
-        let dt = self.open_dts.get_mut(cg_id).unwrap();
-        dt.record_count += 1;
+        // Write with immutable borrow - no clone needed
+        let buf = &self.open_dts.get(cg_id).unwrap().record_buf;
+        self.writer.write_all(buf)?;
         self.offset += record_bytes;
 
         // Track write for streaming and check auto-flush

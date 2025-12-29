@@ -18,7 +18,7 @@ A safe, efficient Rust library for reading and writing ASAM MDF 4 (Measurement D
 
 ```toml
 [dependencies]
-mdf4-rs = "0.1"
+mdf4-rs = "0.2"
 ```
 
 ### Reading
@@ -66,16 +66,20 @@ let mdf_bytes = logger.finalize()?;
 
 ```toml
 [dependencies]
-mdf4-rs = { version = "0.1", default-features = false, features = ["alloc"] }
+mdf4-rs = { version = "0.2", default-features = false, features = ["alloc"] }
 ```
 
 See [`examples/`](./examples/) for complete working examples:
 - `read_file.rs` - Reading MDF4 files
 - `write_file.rs` - Creating MDF4 files
-- `can_logging.rs` - CAN bus logging workflows
+- `can_logging.rs` - CAN bus logging with DBC support
+- `ethernet_logging.rs` - Ethernet frame logging
+- `lin_logging.rs` - LIN bus logging
+- `flexray_logging.rs` - FlexRay bus logging
 - `index_operations.rs` - Efficient file indexing
 - `merge_files.rs` - Merging multiple MDF4 files
 - `cut_file.rs` - Extracting time segments
+- `no_std_write.rs` - Writing MDF4 in no_std environments
 
 ## Feature Flags
 

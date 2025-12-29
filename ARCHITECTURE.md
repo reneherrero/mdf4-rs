@@ -83,9 +83,30 @@ src/
 │   ├── init.rs         # Block initialization and linking
 │   └── data.rs         # Record encoding
 │
-├── can/                # CAN bus logging [std + can/dbc features]
+├── bus_logging.rs      # Shared bus logging utilities
+│
+├── can/                # CAN bus logging [can/dbc features]
 │   ├── mod.rs          # CAN logging re-exports
-│   └── dbc_logger.rs   # CanDbcLogger implementation
+│   ├── raw_logger.rs   # RawCanLogger (ASAM CAN_DataFrame)
+│   ├── dbc_logger.rs   # CanDbcLogger (DBC-based logging)
+│   ├── dbc_overlay.rs  # DbcOverlayReader (post-process decoding)
+│   ├── fd.rs           # CAN FD support (up to 64 bytes)
+│   └── timestamped_frame.rs
+│
+├── ethernet/           # Ethernet bus logging
+│   ├── mod.rs          # Ethernet logging re-exports
+│   ├── raw_logger.rs   # RawEthernetLogger (ASAM ETH_Frame)
+│   └── frame.rs        # EthernetFrame, MacAddress, EtherType
+│
+├── lin/                # LIN bus logging
+│   ├── mod.rs          # LIN logging re-exports
+│   ├── raw_logger.rs   # RawLinLogger (ASAM LIN_Frame)
+│   └── frame.rs        # LinFrame, LinFlags, ChecksumType
+│
+├── flexray/            # FlexRay bus logging
+│   ├── mod.rs          # FlexRay logging re-exports
+│   ├── raw_logger.rs   # RawFlexRayLogger (ASAM FLEXRAY_Frame)
+│   └── frame.rs        # FlexRayFrame, FlexRayChannel, FlexRayFlags
 │
 ├── index.rs            # JSON-serializable file index
 ├── cut.rs              # Time-based segment extraction
@@ -196,7 +217,44 @@ Conversions are implemented in `src/blocks/conversion/`:
 | `##MD` | Metadata | XML metadata |
 | `##DT` | Data | Raw sample records |
 | `##DL` | Data List | Links multiple DT blocks |
+| `##SD` | Signal Data | Variable-length signal data storage |
+| `##DZ` | Compressed Data | Zlib-compressed DT/SD blocks (requires `compression` feature) |
 | `##SI` | Source Info | Acquisition source metadata |
+| `##FH` | File History | Modification history entry |
+| `##EV` | Event | Timestamped markers and triggers |
+| `##AT` | Attachment | Embedded or external files |
+
+## Bus Logging
+
+The library supports ASAM MDF4 Bus Logging for automotive networks:
+
+### CAN Bus (`can` module)
+- `RawCanLogger` - Raw CAN frame capture using `CAN_DataFrame` format
+- `CanDbcLogger` - DBC-based logging with signal decoding (requires `dbc` feature)
+- Support for CAN FD (up to 64 bytes, BRS/ESI flags)
+- Standard (11-bit) and Extended (29-bit) ID support
+
+### Ethernet (`ethernet` module)
+- `RawEthernetLogger` - Raw Ethernet frame capture using `ETH_Frame` format
+- Support for standard and jumbo frames
+- Direction tracking (Tx/Rx)
+- VLAN tag support (802.1Q)
+- Common EtherType constants (IPv4, IPv6, ARP, SOME/IP, DoIP, etc.)
+
+### LIN (`lin` module)
+- `RawLinLogger` - Raw LIN frame capture using `LIN_Frame` format
+- Frame ID 0-63 support
+- Classic (LIN 1.x) and Enhanced (LIN 2.x) checksum
+- Protected ID with parity bits
+- Error flag tracking (checksum, sync, framing, no response)
+
+### FlexRay (`flexray` module)
+- `RawFlexRayLogger` - Raw FlexRay frame capture using `FLEXRAY_Frame` format
+- Dual channel support (A, B, or both)
+- Slot ID (1-2047) and cycle count (0-63)
+- Static and dynamic segment frames
+- Startup and sync frame support
+- Null frame handling
 
 ## Error Handling
 

@@ -1073,17 +1073,237 @@ impl MdfIndex {
         Ok(values)
     }
 
-    /// Read values for a VLSD channel
+    /// Read values for a VLSD channel.
+    ///
+    /// VLSD channels store variable-length data in separate Signal Data (SD) blocks,
+    /// rather than in the regular channel group data blocks. Each record has the format:
+    /// `[u32 length][value bytes]`.
     fn read_vlsd_channel_values<R: ByteRangeReader<Error = Error>>(
         &self,
         _group: &IndexedChannelGroup,
-        _channel: &IndexedChannel,
-        _reader: &mut R,
+        channel: &IndexedChannel,
+        reader: &mut R,
     ) -> Result<Vec<Option<DecodedValue>>> {
-        // TODO: Implement VLSD channel reading
-        Err(Error::BlockSerializationError(
-            "VLSD channels not yet supported in index reader".to_string(),
-        ))
+        let vlsd_addr = channel.vlsd_data_address.ok_or_else(|| {
+            Error::BlockSerializationError("VLSD channel has no data address".to_string())
+        })?;
+
+        if vlsd_addr == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut values = Vec::new();
+
+        // Collect all SD block addresses (may be direct SD or via DL chain)
+        let sd_addresses = self.collect_vlsd_block_addresses(vlsd_addr, reader)?;
+
+        // Process each SD block
+        for sd_addr in sd_addresses {
+            // Read the SD block header first to get its size
+            let header_bytes = reader.read_range(sd_addr, 24)?;
+            let header = BlockHeader::from_bytes(&header_bytes)?;
+
+            if header.id != "##SD" {
+                return Err(Error::BlockIDError {
+                    actual: header.id,
+                    expected: "##SD".to_string(),
+                });
+            }
+
+            // Read the full SD block data (after header)
+            let data_size = header.length.saturating_sub(24) as usize;
+            if data_size == 0 {
+                continue;
+            }
+            let sd_data = reader.read_range(sd_addr + 24, data_size as u64)?;
+
+            // Parse VLSD records: [u32 length][value bytes]...
+            let mut pos = 0;
+            while pos + 4 <= sd_data.len() {
+                // Read the length prefix (u32 little-endian)
+                let len = u32::from_le_bytes([
+                    sd_data[pos],
+                    sd_data[pos + 1],
+                    sd_data[pos + 2],
+                    sd_data[pos + 3],
+                ]) as usize;
+
+                let value_start = pos + 4;
+                let value_end = value_start + len;
+
+                if value_end > sd_data.len() {
+                    // Truncated record - stop parsing
+                    break;
+                }
+
+                let record = &sd_data[value_start..value_end];
+
+                // Decode the VLSD value
+                if let Some(decoded) = self.decode_vlsd_value(record, channel) {
+                    // Apply conversion if present
+                    let final_value = if let Some(conversion) = &channel.conversion {
+                        match conversion.apply_decoded(decoded.clone(), &[]) {
+                            Ok(v) => v,
+                            Err(_) => decoded, // Fall back to raw value on conversion error
+                        }
+                    } else {
+                        decoded
+                    };
+                    values.push(Some(final_value));
+                } else {
+                    values.push(None);
+                }
+
+                pos = value_end;
+            }
+        }
+
+        Ok(values)
+    }
+
+    /// Collect all SD block addresses from a VLSD data address.
+    ///
+    /// The address may point directly to an SD block, or to a DL (Data List) block
+    /// that chains multiple SD blocks together.
+    fn collect_vlsd_block_addresses<R: ByteRangeReader<Error = Error>>(
+        &self,
+        start_addr: u64,
+        reader: &mut R,
+    ) -> Result<Vec<u64>> {
+        let mut addresses = Vec::new();
+        let mut next_addr = start_addr;
+
+        while next_addr != 0 {
+            // Read block header to determine type
+            let header_bytes = reader.read_range(next_addr, 24)?;
+            let header = BlockHeader::from_bytes(&header_bytes)?;
+
+            match header.id.as_str() {
+                "##SD" => {
+                    // Direct SD block
+                    addresses.push(next_addr);
+                    break;
+                }
+                "##DL" => {
+                    // Data List block - read the full block to get addresses
+                    let dl_size = header.length as usize;
+                    let dl_bytes = reader.read_range(next_addr, dl_size as u64)?;
+                    let dl_block = DataListBlock::from_bytes(&dl_bytes)?;
+
+                    // Add all fragment addresses
+                    for &frag_addr in &dl_block.data_block_addrs {
+                        if frag_addr != 0 {
+                            addresses.push(frag_addr);
+                        }
+                    }
+
+                    // Follow the chain
+                    next_addr = dl_block.next_dl_addr;
+                }
+                other => {
+                    return Err(Error::BlockIDError {
+                        actual: other.to_string(),
+                        expected: "##SD or ##DL".to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(addresses)
+    }
+
+    /// Decode a VLSD value from its raw bytes.
+    fn decode_vlsd_value(&self, record: &[u8], channel: &IndexedChannel) -> Option<DecodedValue> {
+        if record.is_empty() {
+            return None;
+        }
+
+        // For VLSD, the entire record is the value payload
+        match channel.data_type {
+            DataType::StringLatin1 => {
+                // Latin-1 to UTF-8 conversion
+                let text: String = record.iter().map(|&b| b as char).collect();
+                let trimmed = text.trim_end_matches('\0').to_string();
+                Some(DecodedValue::String(trimmed))
+            }
+            DataType::StringUtf8 => {
+                let text = String::from_utf8_lossy(record);
+                let trimmed = text.trim_end_matches('\0').to_string();
+                Some(DecodedValue::String(trimmed))
+            }
+            DataType::StringUtf16LE => {
+                if record.len() >= 2 {
+                    let u16_values: Vec<u16> = record
+                        .chunks_exact(2)
+                        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                        .collect();
+                    let text = String::from_utf16_lossy(&u16_values);
+                    let trimmed = text.trim_end_matches('\0').to_string();
+                    Some(DecodedValue::String(trimmed))
+                } else {
+                    None
+                }
+            }
+            DataType::StringUtf16BE => {
+                if record.len() >= 2 {
+                    let u16_values: Vec<u16> = record
+                        .chunks_exact(2)
+                        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                        .collect();
+                    let text = String::from_utf16_lossy(&u16_values);
+                    let trimmed = text.trim_end_matches('\0').to_string();
+                    Some(DecodedValue::String(trimmed))
+                } else {
+                    None
+                }
+            }
+            DataType::ByteArray | DataType::MimeSample | DataType::MimeStream => {
+                Some(DecodedValue::ByteArray(record.to_vec()))
+            }
+            // For numeric types, interpret based on size
+            DataType::UnsignedIntegerLE => match record.len() {
+                1 => Some(DecodedValue::UnsignedInteger(record[0] as u64)),
+                2 => Some(DecodedValue::UnsignedInteger(
+                    u16::from_le_bytes([record[0], record[1]]) as u64,
+                )),
+                4 => Some(DecodedValue::UnsignedInteger(u32::from_le_bytes([
+                    record[0], record[1], record[2], record[3],
+                ]) as u64)),
+                8 => Some(DecodedValue::UnsignedInteger(u64::from_le_bytes([
+                    record[0], record[1], record[2], record[3], record[4], record[5], record[6],
+                    record[7],
+                ]))),
+                _ => Some(DecodedValue::ByteArray(record.to_vec())),
+            },
+            DataType::SignedIntegerLE => match record.len() {
+                1 => Some(DecodedValue::SignedInteger(record[0] as i8 as i64)),
+                2 => Some(DecodedValue::SignedInteger(
+                    i16::from_le_bytes([record[0], record[1]]) as i64,
+                )),
+                4 => Some(DecodedValue::SignedInteger(i32::from_le_bytes([
+                    record[0], record[1], record[2], record[3],
+                ]) as i64)),
+                8 => Some(DecodedValue::SignedInteger(i64::from_le_bytes([
+                    record[0], record[1], record[2], record[3], record[4], record[5], record[6],
+                    record[7],
+                ]))),
+                _ => Some(DecodedValue::ByteArray(record.to_vec())),
+            },
+            DataType::FloatLE => match record.len() {
+                4 => Some(DecodedValue::Float(f32::from_le_bytes([
+                    record[0], record[1], record[2], record[3],
+                ]) as f64)),
+                8 => Some(DecodedValue::Float(f64::from_le_bytes([
+                    record[0], record[1], record[2], record[3], record[4], record[5], record[6],
+                    record[7],
+                ]))),
+                _ => Some(DecodedValue::ByteArray(record.to_vec())),
+            },
+            _ => {
+                // For other types, return as byte array
+                Some(DecodedValue::ByteArray(record.to_vec()))
+            }
+        }
     }
 
     /// Get channel information for a specific group and channel

@@ -1,4 +1,15 @@
-// Functions for creating and linking MDF structure blocks
+//! MDF file structure initialization and block creation.
+//!
+//! This module provides methods for building the MDF4 file structure:
+//!
+//! - File initialization (ID and HD blocks)
+//! - Data group (DG) and channel group (CG) creation
+//! - Channel (CN) definition with data types and conversions
+//! - Source information (SI) attachment
+//! - Conversion rules (CC) for physical value scaling
+//!
+//! The created blocks are automatically linked according to the MDF4 specification.
+
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;

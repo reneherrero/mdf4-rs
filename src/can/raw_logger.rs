@@ -40,6 +40,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "can")]
 use super::fd::FdFrame;
 use super::fd::{FdFlags, MAX_FD_DATA_LEN};
+use crate::bus_logging::timestamp_to_seconds;
 
 /// Frame type classification for ASAM channel grouping.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -59,6 +60,16 @@ enum FrameType {
 }
 
 impl FrameType {
+    /// All frame type variants for zero-allocation iteration.
+    const ALL: [Self; 6] = [
+        Self::Classic,
+        Self::ClassicExtended,
+        Self::FdSmall,
+        Self::FdSmallExtended,
+        Self::FdLarge,
+        Self::FdLargeExtended,
+    ];
+
     fn group_name(&self, bus_name: &str) -> String {
         match self {
             FrameType::Classic => alloc::format!("{}_DataFrame", bus_name),
@@ -129,7 +140,7 @@ impl RawFrame {
         let len = data.len().min(8);
         frame_data[..len].copy_from_slice(&data[..len]);
         Self {
-            timestamp_s: timestamp_us as f64 / 1_000_000.0,
+            timestamp_s: timestamp_to_seconds(timestamp_us),
             can_id,
             dlc,
             data: frame_data,
@@ -152,7 +163,7 @@ impl RawFrame {
         let len = data.len().min(MAX_FD_DATA_LEN);
         frame_data[..len].copy_from_slice(&data[..len]);
         Self {
-            timestamp_s: timestamp_us as f64 / 1_000_000.0,
+            timestamp_s: timestamp_to_seconds(timestamp_us),
             can_id,
             dlc,
             data: frame_data,
@@ -255,22 +266,29 @@ pub struct RawCanLogger<W: crate::writer::MdfWrite> {
 impl RawCanLogger<crate::writer::VecWriter> {
     /// Create a new raw CAN logger with in-memory output.
     pub fn new() -> crate::Result<Self> {
-        Self::with_bus_name("CAN")
+        Self::with_source_name("CAN")
     }
 
-    /// Create a new raw CAN logger with a custom bus name.
+    /// Create a new raw CAN logger with a custom source name.
     ///
-    /// The bus name is used for channel group names and source metadata.
+    /// The source name is used for channel group names and source metadata.
     /// Examples: "CAN", "CAN1", "Vehicle_CAN", etc.
-    pub fn with_bus_name(bus_name: &str) -> crate::Result<Self> {
+    pub fn with_source_name(source_name: &str) -> crate::Result<Self> {
         let writer = crate::MdfWriter::from_writer(crate::writer::VecWriter::new());
         Ok(Self {
             writer,
-            bus_name: String::from(bus_name),
+            bus_name: String::from(source_name),
             buffers: alloc::collections::BTreeMap::new(),
             channel_groups: alloc::collections::BTreeMap::new(),
             initialized: false,
         })
+    }
+
+    /// Create a new raw CAN logger with a custom bus name.
+    ///
+    /// Alias for [`with_source_name`](Self::with_source_name) for API compatibility.
+    pub fn with_bus_name(bus_name: &str) -> crate::Result<Self> {
+        Self::with_source_name(bus_name)
     }
 
     /// Create a new raw CAN logger with pre-allocated capacity.
@@ -297,19 +315,26 @@ impl RawCanLogger<crate::writer::VecWriter> {
 impl RawCanLogger<crate::writer::FileWriter> {
     /// Create a new raw CAN logger that writes to a file.
     pub fn new_file(path: &str) -> crate::Result<Self> {
-        Self::new_file_with_bus_name(path, "CAN")
+        Self::new_file_with_source_name(path, "CAN")
     }
 
-    /// Create a new raw CAN logger that writes to a file with custom bus name.
-    pub fn new_file_with_bus_name(path: &str, bus_name: &str) -> crate::Result<Self> {
+    /// Create a new raw CAN logger that writes to a file with custom source name.
+    pub fn new_file_with_source_name(path: &str, source_name: &str) -> crate::Result<Self> {
         let writer = crate::MdfWriter::new(path)?;
         Ok(Self {
             writer,
-            bus_name: String::from(bus_name),
+            bus_name: String::from(source_name),
             buffers: alloc::collections::BTreeMap::new(),
             channel_groups: alloc::collections::BTreeMap::new(),
             initialized: false,
         })
+    }
+
+    /// Create a new raw CAN logger that writes to a file with custom bus name.
+    ///
+    /// Alias for [`new_file_with_source_name`](Self::new_file_with_source_name) for API compatibility.
+    pub fn new_file_with_bus_name(path: &str, bus_name: &str) -> crate::Result<Self> {
+        Self::new_file_with_source_name(path, bus_name)
     }
 
     /// Finalize and close the MDF file.
@@ -342,18 +367,18 @@ impl RawCanLogger<crate::writer::VecWriter> {
     /// std::fs::write("appended.mf4", bytes)?;
     /// ```
     pub fn from_file(path: &str) -> crate::Result<Self> {
-        Self::from_file_with_bus_name(path, "CAN")
+        Self::from_file_with_source_name(path, "CAN")
     }
 
-    /// Load an existing MDF4 file for appending with a custom bus name.
-    pub fn from_file_with_bus_name(path: &str, bus_name: &str) -> crate::Result<Self> {
+    /// Load an existing MDF4 file for appending with a custom source name.
+    pub fn from_file_with_source_name(path: &str, source_name: &str) -> crate::Result<Self> {
         use crate::DecodedValue;
         use crate::index::{FileRangeReader, MdfIndex};
 
         let index = MdfIndex::from_file(path)?;
         let mut reader = FileRangeReader::new(path)?;
 
-        let mut logger = Self::with_bus_name(bus_name)?;
+        let mut logger = Self::with_source_name(source_name)?;
 
         // Find ASAM CAN_DataFrame channel groups
         for (group_idx, group) in index.channel_groups.iter().enumerate() {
@@ -433,6 +458,13 @@ impl RawCanLogger<crate::writer::VecWriter> {
         Ok(logger)
     }
 
+    /// Load an existing MDF4 file for appending with a custom bus name.
+    ///
+    /// Alias for [`from_file_with_source_name`](Self::from_file_with_source_name) for API compatibility.
+    pub fn from_file_with_bus_name(path: &str, bus_name: &str) -> crate::Result<Self> {
+        Self::from_file_with_source_name(path, bus_name)
+    }
+
     /// Get the last timestamp in microseconds from loaded frames.
     ///
     /// Returns 0 if no frames have been logged.
@@ -453,11 +485,18 @@ impl RawCanLogger<crate::writer::VecWriter> {
 }
 
 impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
-    /// Set the CAN bus name for source metadata.
+    /// Set the source name for metadata.
     ///
     /// Must be called before logging any frames.
-    pub fn set_bus_name(&mut self, name: &str) {
+    pub fn set_source_name(&mut self, name: &str) {
         self.bus_name = String::from(name);
+    }
+
+    /// Set the CAN bus name for source metadata.
+    ///
+    /// Alias for [`set_source_name`](Self::set_source_name) for API compatibility.
+    pub fn set_bus_name(&mut self, name: &str) {
+        self.set_source_name(name);
     }
 
     /// Log a raw CAN frame with standard 11-bit ID (classic CAN, up to 8 bytes).
@@ -600,9 +639,11 @@ impl<W: crate::writer::MdfWrite> RawCanLogger<W> {
             self.initialize_mdf()?;
         }
 
-        // Write data for each frame type
-        for frame_type in self.buffers.keys().copied().collect::<Vec<_>>() {
-            self.write_frames(frame_type)?;
+        // Write data for each frame type (zero-allocation iteration)
+        for frame_type in FrameType::ALL {
+            if self.buffers.contains_key(&frame_type) {
+                self.write_frames(frame_type)?;
+            }
         }
 
         // Clear all buffers
@@ -981,6 +1022,13 @@ mod tests {
     #[test]
     fn test_bus_name() {
         let logger = RawCanLogger::with_bus_name("Vehicle_CAN").unwrap();
+        assert_eq!(logger.bus_name, "Vehicle_CAN");
+    }
+
+    #[test]
+    fn test_source_name_alias() {
+        // with_source_name should work the same as with_bus_name
+        let logger = RawCanLogger::with_source_name("Vehicle_CAN").unwrap();
         assert_eq!(logger.bus_name, "Vehicle_CAN");
     }
 

@@ -18,6 +18,7 @@
 //! - **Indexing** (std only): Generate lightweight JSON indexes
 //! - **Cutting** (std only): Extract time-based segments from recordings
 //! - **Merging** (std only): Combine multiple MDF files
+//! - **Bus Logging**: ASAM-compliant logging for CAN, Ethernet, LIN, and FlexRay
 //!
 //! ## Feature Flags
 //!
@@ -25,6 +26,9 @@
 //! |---------|---------|-------------|
 //! | `std` | Yes | Full std library support. Enables file I/O, indexing, merging. |
 //! | `alloc` | Yes | Heap allocation. Required for all functionality. |
+//! | `can` | Yes | CAN bus support via `embedded-can` crate. |
+//! | `dbc` | Yes | DBC file decoding via `dbc-rs` crate. |
+//! | `compression` | No | DZ block decompression via `miniz_oxide`. |
 //!
 //! ## no_std Usage
 //!
@@ -160,6 +164,10 @@
 //! |--------|-------------|----------|
 //! | [`blocks`] | Low-level MDF block structures | `alloc` |
 //! | [`writer`] | MDF file creation | `alloc` |
+//! | [`can`] | CAN bus logging (raw and DBC-decoded) | `alloc` |
+//! | [`ethernet`] | Ethernet frame logging | `alloc` |
+//! | [`lin`] | LIN bus logging | `alloc` |
+//! | [`flexray`] | FlexRay bus logging | `alloc` |
 //! | [`parsing`] | File parsing utilities | `std` |
 //! | [`index`] | File indexing | `std` |
 //! | [`cut`] | Time-based segment extraction | `std` |
@@ -187,9 +195,25 @@ pub mod error;
 #[cfg(feature = "alloc")]
 pub mod writer;
 
+// Shared bus logging utilities (requires alloc)
+#[cfg(feature = "alloc")]
+pub mod bus_logging;
+
 // CAN bus integration (requires alloc, dbc-specific features gated inside)
 #[cfg(feature = "alloc")]
 pub mod can;
+
+// Ethernet bus integration (requires alloc)
+#[cfg(feature = "alloc")]
+pub mod ethernet;
+
+// LIN bus integration (requires alloc)
+#[cfg(feature = "alloc")]
+pub mod lin;
+
+// FlexRay bus integration (requires alloc)
+#[cfg(feature = "alloc")]
+pub mod flexray;
 
 // Modules requiring std (file I/O)
 #[cfg(feature = "std")]

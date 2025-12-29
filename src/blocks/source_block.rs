@@ -139,6 +139,21 @@ impl SourceBlock {
         Self::new(SourceType::Bus, BusType::CAN)
     }
 
+    /// Creates a new SourceBlock for an Ethernet interface.
+    pub fn ethernet() -> Self {
+        Self::new(SourceType::Bus, BusType::Ethernet)
+    }
+
+    /// Creates a new SourceBlock for a LIN bus.
+    pub fn lin_bus() -> Self {
+        Self::new(SourceType::Bus, BusType::LIN)
+    }
+
+    /// Creates a new SourceBlock for a FlexRay bus.
+    pub fn flexray() -> Self {
+        Self::new(SourceType::Bus, BusType::FlexRay)
+    }
+
     /// Serializes the SourceBlock to bytes according to MDF 4.1 specification.
     pub fn to_bytes(&self) -> Result<alloc::vec::Vec<u8>> {
         use alloc::vec::Vec;

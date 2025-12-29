@@ -162,19 +162,15 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed module structure, design pri
 
 ### High Priority
 
-- **VLSD channel reading** - Variable Length Signal Data support
 - More comprehensive test coverage
 
 ### Medium Priority
 
-- **File history block** (FH) - Tool/modification tracking
-- **Event block** (EV) - Timestamped markers
-- **Bus logging** - LIN, FlexRay, Ethernet support
 - More example code
+- Performance optimizations
 
 ### Low Priority
 
-- **Attachment block** (AT) - Embedded files
 - Extended SI block parsing
 
 ## Questions?
