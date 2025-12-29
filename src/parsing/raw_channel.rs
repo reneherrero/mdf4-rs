@@ -139,7 +139,8 @@ impl<'a> RawChannel {
         let invalidation_bytes = channel_group.block.invalidation_size as usize;
         let record_size = record_id_len + sample_byte_len + invalidation_bytes;
 
-        // Gather all DataBlock fragments (DT, DV or DZ):
+        // Gather all DataBlock fragments (DT, DV):
+        // Note: DZ blocks are handled at a higher level via MdfIndex
         let blocks = data_group.data_blocks(mmap)?;
 
         // When record_id_len > 0 and there are multiple channel groups,
@@ -230,7 +231,7 @@ impl<'a> RawChannel {
 
         // Simple case: no record IDs or single channel group - all records same size
         let iter = blocks.into_iter().flat_map(move |data_block| {
-            // For DZBLOCK you already unzipped into DataBlock, so here data_block.data
+            // Note: DZ blocks should be handled at a higher level via MdfIndex
             let raw = data_block.data;
             let valid_len = (raw.len() / record_size) * record_size;
             // `chunks_exact` returns an iterator of &[u8] each exactly record_size

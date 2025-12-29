@@ -11,4 +11,5 @@ pub(crate) use mdf_file::MdfFile;
 pub(crate) use raw_channel::RawChannel;
 pub(crate) use raw_channel_group::RawChannelGroup;
 pub(crate) use raw_data_group::RawDataGroup;
+pub use raw_data_group::{DataBlockData, ResolvedDataBlock};
 pub(crate) use source_info::SourceInfo;

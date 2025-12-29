@@ -4,7 +4,7 @@ A safe, efficient Rust library for reading and writing ASAM MDF 4 (Measurement D
 
 [![Crates.io](https://img.shields.io/crates/v/mdf4-rs.svg)](https://crates.io/crates/mdf4-rs)
 [![Documentation](https://docs.rs/mdf4-rs/badge.svg)](https://docs.rs/mdf4-rs)
-[![License](https://img.shields.io/crates/l/mdf4-rs.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSING.md)
 
 ## Features
 
@@ -38,7 +38,7 @@ for group in mdf.channel_groups() {
 ### Writing
 
 ```rust
-use mdf4_rs::{MdfWriter, DataType, DecodedValue};
+use mdf4_rs::{MdfWriter, DataType};
 
 let mut writer = MdfWriter::new("output.mf4")?;
 writer.init_mdf_file()?;
@@ -62,6 +62,21 @@ logger.log(0x100, timestamp_us, &frame_data);
 let mdf_bytes = logger.finalize()?;
 ```
 
+### Minimal (`no_std`)
+
+```toml
+[dependencies]
+mdf4-rs = { version = "0.1", default-features = false, features = ["alloc"] }
+```
+
+See [`examples/`](./examples/) for complete working examples:
+- `read_file.rs` - Reading MDF4 files
+- `write_file.rs` - Creating MDF4 files
+- `can_logging.rs` - CAN bus logging workflows
+- `index_operations.rs` - Efficient file indexing
+- `merge_files.rs` - Merging multiple MDF4 files
+- `cut_file.rs` - Extracting time segments
+
 ## Feature Flags
 
 | Feature | Description | Default |
@@ -71,37 +86,13 @@ let mdf_bytes = logger.finalize()?;
 | `can` | CAN bus support via `embedded-can` | Yes |
 | `dbc` | DBC decoding via `dbc-rs` | Yes |
 | `serde` | Serialization support | Via `std` |
-
-### Minimal Configuration
-
-```toml
-[dependencies]
-mdf4-rs = { version = "0.1", default-features = false, features = ["alloc"] }
-```
-
-## Performance
-
-| File Size | Streaming Index | Memory Savings |
-|-----------|-----------------|----------------|
-| 1 MB | 6x faster | 50x less |
-| 40 MB | 335x faster | 50x less |
-
-## Examples
-
-See [`examples/`](./examples/) for complete working examples:
-
-- `can_logging.rs` - CAN bus logging workflows (decoded, raw, overlay, streaming)
-- `read_file.rs` - Reading MDF4 files
-- `write_file.rs` - Creating MDF4 files
-- `index_operations.rs` - Efficient file indexing
-- `merge_files.rs` - Merging multiple MDF4 files
-- `cut_file.rs` - Extracting time segments
+| `compression` | DZ block decompression via `miniz_oxide` | No |
 
 ## Documentation
 
 - [API Reference](https://docs.rs/mdf4-rs)
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Internal design
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - Internal design
 
 ## License
 
-MIT OR Apache-2.0. See [LICENSING.md](LICENSING.md).
+MIT OR Apache-2.0. See [LICENSING.md](./LICENSING.md).

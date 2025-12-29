@@ -70,6 +70,8 @@
 //! - `serde`: Enables index serialization/deserialization
 //! - `serde_json`: Enables JSON file save/load methods
 
+#[cfg(feature = "compression")]
+use crate::blocks::DzBlock;
 use crate::{
     Error, MDF, Result,
     blocks::{
@@ -978,17 +980,25 @@ impl MdfIndex {
 
         // Read from each data block
         for data_block in &group.data_blocks {
-            // Handle compression if needed
-            if data_block.is_compressed {
-                // TODO: Implement decompression for DZ blocks
-                return Err(Error::BlockSerializationError(
-                    "Compressed blocks not yet supported in index reader".to_string(),
-                ));
-            }
-
-            // Read the block data (skip 24-byte block header)
-            let block_data =
-                reader.read_range(data_block.file_offset + 24, data_block.size - 24)?;
+            // Get the block data, decompressing if needed
+            let block_data: Vec<u8> = if data_block.is_compressed {
+                #[cfg(feature = "compression")]
+                {
+                    // Read the full DZ block (header + compressed data)
+                    let dz_bytes = reader.read_range(data_block.file_offset, data_block.size)?;
+                    let dz_block = DzBlock::from_bytes(&dz_bytes)?;
+                    dz_block.decompress()?
+                }
+                #[cfg(not(feature = "compression"))]
+                {
+                    return Err(Error::BlockSerializationError(
+                        "Compressed blocks require the 'compression' feature".to_string(),
+                    ));
+                }
+            } else {
+                // Read the block data (skip 24-byte block header)
+                reader.read_range(data_block.file_offset + 24, data_block.size - 24)?
+            };
 
             // Process records in this block
             let record_count = block_data.len() / record_size;
@@ -1250,8 +1260,13 @@ impl MdfIndex {
 
         for data_block in &group.data_blocks {
             if data_block.is_compressed {
+                // Compressed blocks cannot be accessed via byte ranges because the
+                // data layout changes after decompression. Use read_channel_values()
+                // instead, which handles decompression transparently.
                 return Err(Error::BlockSerializationError(
-                    "Compressed blocks not supported for byte range calculation".to_string(),
+                    "Compressed blocks cannot be accessed via byte ranges. \
+                     Use read_channel_values() instead."
+                        .to_string(),
                 ));
             }
 

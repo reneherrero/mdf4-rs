@@ -21,6 +21,7 @@ alloc = []
 serde = ["dep:serde"]
 can = ["dep:embedded-can"]
 dbc = ["dep:dbc-rs", "alloc"]
+compression = ["dep:miniz_oxide", "alloc"]
 
 [dependencies]
 
@@ -44,6 +45,11 @@ default-features = false
 features = ["alloc"]
 optional = true
 
+[dependencies.miniz_oxide]
+version = "0.8"
+default-features = false
+features = ["with-alloc"]
+optional = true
 
 [dev-dependencies]
 
@@ -61,6 +67,9 @@ version = "0.4"
 version = "0.3.0"
 default-features = false
 features = ["std"]
+
+[dev-dependencies.miniz_oxide]
+version = "0.8"
 
 [[bench]]
 name = "index_benchmark"
