@@ -129,7 +129,9 @@ impl RawDataGroup {
                     // Move to the next DLBLOCK in the chain (0 = end)
                     current_block_address = data_list_block.next_dl_addr;
                 }
-
+                "##HL" => {
+                    continue;
+                }
                 unexpected_id => {
                     return Err(Error::BlockIDError {
                         actual: unexpected_id.to_string(),
@@ -243,6 +245,9 @@ impl RawDataGroup {
                     }
 
                     current_block_address = data_list_block.next_dl_addr;
+                }
+                "##HL" => {
+                    continue;
                 }
                 unexpected_id => {
                     return Err(Error::BlockIDError {

@@ -893,7 +893,10 @@ impl MdfIndex {
                     // Move to the next DLBLOCK in the chain (0 = end)
                     current_block_address = data_list_block.next_dl_addr;
                 }
-
+                "##HL" => {
+                    current_block_address = 0;
+                    continue;
+                }
                 unexpected_id => {
                     return Err(Error::BlockIDError {
                         actual: unexpected_id.to_string(),
@@ -1199,6 +1202,9 @@ impl MdfIndex {
 
                     // Follow the chain
                     next_addr = dl_block.next_dl_addr;
+                }
+                "##HL" => {
+                    break;
                 }
                 other => {
                     return Err(Error::BlockIDError {
