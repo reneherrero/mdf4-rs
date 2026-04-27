@@ -46,7 +46,7 @@ features = ["alloc"]
 optional = true
 
 [dependencies.miniz_oxide]
-version = "0.8"
+version = "0.9"
 default-features = false
 features = ["with-alloc"]
 optional = true
@@ -54,7 +54,7 @@ optional = true
 [dev-dependencies]
 
 [dev-dependencies.criterion]
-version = "0.5"
+version = "0.7"
 
 [dev-dependencies.serde]
 version = "1.0"
@@ -69,7 +69,7 @@ default-features = false
 features = ["std"]
 
 [dev-dependencies.miniz_oxide]
-version = "0.8"
+version = "0.9"
 
 [[bench]]
 name = "index_benchmark"

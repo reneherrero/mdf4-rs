@@ -91,7 +91,7 @@ pub fn merge_files(output: &str, first: &str, second: &str) -> Result<()> {
 
     for og in other_groups {
         if let Some(g1) = groups.iter_mut().find(|g| g.meta == og.meta) {
-            for (vals1, vals2) in g1.data.iter_mut().zip(og.data.into_iter()) {
+            for (vals1, vals2) in g1.data.iter_mut().zip(og.data) {
                 vals1.extend(vals2);
             }
         } else {
