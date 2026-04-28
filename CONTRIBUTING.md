@@ -11,7 +11,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 ### Prerequisites
 
 - Familiarity with Rust and the MDF4 file format
-- Latest stable release of Rust (MSRV: 1.85.0)
+- Latest stable release of Rust (MSRV: 1.87.0)
 - Code coverage is done with `cargo-llvm-cov`
 
 ### Setting Up the Development Environment
@@ -78,7 +78,7 @@ cargo clippy --no-default-features --features alloc --lib -- -D warnings
 - **Tests**: Must pass with all features enabled
 - **Compilation**: Must compile with `alloc` only (no_std compatible)
 - **Coverage**: Minimum 80%
-- **MSRV**: Must work with Rust 1.85.0
+- **MSRV**: Must work with Rust 1.87.0
 
 ### Coding Standards
 
@@ -183,6 +183,6 @@ If you have questions or need help:
 
 ## License
 
-By contributing to mdf4-rs, you agree that your contributions will be licensed under the same license as the project (MIT OR Apache-2.0). See [LICENSING.md](LICENSING.md) for details.
+By contributing to mdf4-rs, you agree that your contributions will be dual licensed under MIT OR Apache-2.0, without any additional terms or conditions. See the [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE) files for the full text.
 
-Thank you for contributing!
+Thank you for contributing! 🎉
