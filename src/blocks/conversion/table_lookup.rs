@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 /// `values` must be `[key0, val0, key1, val1, …]`.
 pub fn lookup_table(values: &[f64], raw: f64, interp: bool) -> Option<f64> {
     let len = values.len();
-    if len < 4 || len % 2 != 0 {
+    if len < 4 || !len.is_multiple_of(2) {
         return None;
     }
     let n = len / 2;
@@ -59,7 +59,7 @@ pub fn apply_range_lookup(block: &ConversionBlock, value: DecodedValue) -> Resul
             DecodedValue::UnsignedInteger(_) | DecodedValue::SignedInteger(_)
         );
         let v = &block.values;
-        if v.len() < 4 || (v.len() - 1) % 3 != 0 {
+        if v.len() < 4 || !(v.len() - 1).is_multiple_of(3) {
             return Ok(DecodedValue::Float(raw));
         }
         let n = (v.len() - 1) / 3;
