@@ -13,6 +13,35 @@ fn test_data_path(filename: &str) -> String {
 }
 
 // ============================================================================
+// Channel Hierarchy (##HL) in the data-block chain (PR #4)
+// ============================================================================
+
+/// Minimal MDF4 where `##DG.data_block_addr` points at `##HL`, which precedes `##DL` /
+/// `##DT` in the payload chain (see [mdf4-rs#4](https://github.com/reneherrero/mdf4-rs/pull/4)).
+/// Opening the file succeeds; collecting DT fragments for samples hits `##HL` and must skip it.
+#[test]
+fn sample_with_hl_in_data_chain_loads() {
+    let path = test_data_path("sample_with_hl.mf4");
+    let mdf = MDF::from_file(&path).expect("fixture should be valid MDF4 metadata");
+
+    let groups = mdf.channel_groups();
+    assert!(!groups.is_empty(), "Should have at least one channel group");
+
+    let channels = groups[0].channels();
+    assert!(!channels.is_empty(), "Should have channels");
+
+    for ch in channels {
+        let values = ch.values();
+        assert!(
+            values.is_ok(),
+            "channel {:?}: reading samples should skip ##HL in the data-block chain (err: {:?})",
+            ch.name(),
+            values.as_ref().err()
+        );
+    }
+}
+
+// ============================================================================
 // Tests for UnFinMF format files (now supported)
 // ============================================================================
 

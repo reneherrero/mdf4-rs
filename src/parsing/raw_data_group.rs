@@ -2,7 +2,7 @@ use super::RawChannelGroup;
 use crate::{
     Error, Result,
     blocks::{
-        DataBlock, DataGroupBlock, DataListBlock, {BlockHeader, BlockParse},
+        DataBlock, DataGroupBlock, DataListBlock, HlBlock, u64_to_usize, {BlockHeader, BlockParse},
     },
 };
 use alloc::string::ToString;
@@ -120,7 +120,12 @@ impl RawDataGroup {
 
                     // Parse each fragment in this list
                     for &fragment_address in &data_list_block.data_block_addrs {
-                        let fragment_offset = fragment_address as usize;
+                        if fragment_address == 0 {
+                            continue;
+                        }
+                        let (frag_addr, _) =
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
+                        let fragment_offset = u64_to_usize(frag_addr, "DL fragment address")?;
                         let fragment_block = DataBlock::from_bytes(&mmap[fragment_offset..])?;
 
                         collected_blocks.push(fragment_block);
@@ -129,11 +134,16 @@ impl RawDataGroup {
                     // Move to the next DLBLOCK in the chain (0 = end)
                     current_block_address = data_list_block.next_dl_addr;
                 }
+                "##HL" => {
+                    let len = u64_to_usize(block_header.length, "##HL")?;
+                    current_block_address =
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                }
 
                 unexpected_id => {
                     return Err(Error::BlockIDError {
                         actual: unexpected_id.to_string(),
-                        expected: "##DT / ##DV / ##DL".to_string(),
+                        expected: "##DT / ##DV / ##DL / ##HL".to_string(),
                     });
                 }
             }
@@ -201,9 +211,12 @@ impl RawDataGroup {
                     let data_list_block = DataListBlock::from_bytes(&mmap[byte_offset..])?;
 
                     for &fragment_address in &data_list_block.data_block_addrs {
-                        let fragment_offset = fragment_address as usize;
-                        let frag_header =
-                            BlockHeader::from_bytes(&mmap[fragment_offset..fragment_offset + 24])?;
+                        if fragment_address == 0 {
+                            continue;
+                        }
+                        let (frag_addr, frag_header) =
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
+                        let fragment_offset = u64_to_usize(frag_addr, "DL fragment address")?;
 
                         match frag_header.id.as_str() {
                             "##DT" | "##DV" => {
@@ -244,15 +257,50 @@ impl RawDataGroup {
 
                     current_block_address = data_list_block.next_dl_addr;
                 }
+                "##HL" => {
+                    let len = u64_to_usize(block_header.length, "##HL")?;
+                    current_block_address =
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                }
                 unexpected_id => {
                     return Err(Error::BlockIDError {
                         actual: unexpected_id.to_string(),
-                        expected: "##DT / ##DV / ##DL / ##DZ".to_string(),
+                        expected: "##DT / ##DV / ##DL / ##DZ / ##HL".to_string(),
                     });
                 }
             }
         }
 
         Ok(collected_blocks)
+    }
+}
+
+#[cfg(test)]
+mod hl_chain_tests {
+    //! `##HL` may appear in the `##DG` measurement-data chain before `##DL` / `##DT`.
+    //! See `tests/data/sample_with_hl.mf4` (same bytes as `sample_with_hl_in_data_chain_loads`).
+
+    use super::RawDataGroup;
+    use crate::blocks::{BlockParse, DataGroupBlock};
+
+    #[test]
+    fn data_blocks_skip_hl_before_dt_in_chain() {
+        const SAMPLE: &[u8] = include_bytes!("../../tests/data/sample_with_hl.mf4");
+        const DG_OFF: usize = 1400;
+
+        let dg = DataGroupBlock::from_bytes(&SAMPLE[DG_OFF..DG_OFF + 64]).expect("DG in fixture");
+        let group = RawDataGroup {
+            block: dg,
+            channel_groups: Vec::new(),
+            is_unfinalized: false,
+        };
+
+        let blocks = group
+            .data_blocks(SAMPLE)
+            .expect("reader should skip ##HL and collect DT blocks");
+        assert!(
+            !blocks.is_empty(),
+            "fixture contains measurement data after ##HL"
+        );
     }
 }

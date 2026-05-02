@@ -54,6 +54,7 @@ mod dz_block;
 mod event_block;
 mod file_history_block;
 mod header_block;
+pub(crate) mod hl_block;
 mod identification_block;
 mod metadata_block;
 mod signal_data_block;
@@ -65,6 +66,8 @@ pub use common::{BlockHeader, BlockParse, DataType};
 // Internal-only exports (std only - used by MdfFile parsing)
 #[cfg(feature = "std")]
 pub(crate) use common::read_string_block;
+#[cfg(feature = "std")]
+pub(crate) use common::{u64_to_usize, validate_buffer_size};
 
 // Re-export block types
 pub use attachment_block::{AT_HEADER_SIZE, AttachmentBlock, AttachmentFlags};
@@ -78,6 +81,7 @@ pub use dz_block::{DZ_HEADER_SIZE, DzBlock, DzCompressionType};
 pub use event_block::{EventBlock, EventCause, EventRangeType, EventSyncType, EventType};
 pub use file_history_block::FileHistoryBlock;
 pub use header_block::HeaderBlock;
+pub use hl_block::HlBlock;
 pub use identification_block::IdentificationBlock;
 pub use metadata_block::MetadataBlock;
 pub use signal_data_block::SignalDataBlock;

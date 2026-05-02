@@ -76,7 +76,8 @@ use crate::{
     Error, MDF, Result,
     blocks::{
         BlockHeader, BlockParse, ChannelBlock, ChannelGroupBlock, ConversionBlock, ConversionType,
-        DataGroupBlock, DataListBlock, DataType, HeaderBlock, IdentificationBlock, TextBlock,
+        DataGroupBlock, DataListBlock, DataType, HeaderBlock, HlBlock, IdentificationBlock,
+        TextBlock, u64_to_usize, validate_buffer_size,
     },
     parsing::decoder::{DecodedValue, decode_channel_value_with_validity},
 };
@@ -809,19 +810,31 @@ impl MdfIndex {
 
                     // Process each fragment
                     for &fragment_addr in &dl_block.data_block_addrs {
-                        if fragment_addr != 0 {
-                            let frag_header_bytes = reader.read_range(fragment_addr, 24)?;
-                            let frag_header = BlockHeader::from_bytes(&frag_header_bytes)?;
-
-                            data_blocks.push(DataBlockInfo {
-                                file_offset: fragment_addr,
-                                size: frag_header.length,
-                                is_compressed: frag_header.id == "##DZ",
-                            });
+                        if fragment_addr == 0 {
+                            continue;
+                        }
+                        let mut frag_pos = fragment_addr;
+                        loop {
+                            let frag_hdr_bytes = reader.read_range(frag_pos, 24)?;
+                            let frag_hdr = BlockHeader::from_bytes(&frag_hdr_bytes)?;
+                            if frag_hdr.id.as_str() != "##HL" {
+                                data_blocks.push(DataBlockInfo {
+                                    file_offset: frag_pos,
+                                    size: frag_hdr.length,
+                                    is_compressed: frag_hdr.id == "##DZ",
+                                });
+                                break;
+                            }
+                            let hl_bytes = reader.read_range(frag_pos, frag_hdr.length)?;
+                            frag_pos = HlBlock::next_block_addr(&hl_bytes)?;
                         }
                     }
 
                     current_addr = dl_block.next_dl_addr;
+                }
+                "##HL" => {
+                    let hl_bytes = reader.read_range(current_addr, header.length)?;
+                    current_addr = HlBlock::next_block_addr(&hl_bytes)?;
                 }
                 _ => {
                     // Unknown block type, stop
@@ -877,13 +890,15 @@ impl MdfIndex {
 
                     // Parse each fragment in this list
                     for &fragment_address in &data_list_block.data_block_addrs {
-                        let fragment_offset = fragment_address as usize;
-                        let fragment_header =
-                            BlockHeader::from_bytes(&mmap[fragment_offset..fragment_offset + 24])?;
+                        if fragment_address == 0 {
+                            continue;
+                        }
+                        let (frag_addr, fragment_header) =
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
 
                         let is_compressed = fragment_header.id == "##DZ";
                         let data_block_info = DataBlockInfo {
-                            file_offset: fragment_address,
+                            file_offset: frag_addr,
                             size: fragment_header.length,
                             is_compressed,
                         };
@@ -893,11 +908,17 @@ impl MdfIndex {
                     // Move to the next DLBLOCK in the chain (0 = end)
                     current_block_address = data_list_block.next_dl_addr;
                 }
+                "##HL" => {
+                    let len = u64_to_usize(block_header.length, "##HL")?;
+                    validate_buffer_size(&mmap[byte_offset..], len)?;
+                    current_block_address =
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                }
 
                 unexpected_id => {
                     return Err(Error::BlockIDError {
                         actual: unexpected_id.to_string(),
-                        expected: "##DT / ##DV / ##DL / ##DZ".to_string(),
+                        expected: "##DT / ##DV / ##DL / ##DZ / ##HL".to_string(),
                     });
                 }
             }
@@ -1192,18 +1213,33 @@ impl MdfIndex {
 
                     // Add all fragment addresses
                     for &frag_addr in &dl_block.data_block_addrs {
-                        if frag_addr != 0 {
-                            addresses.push(frag_addr);
+                        if frag_addr == 0 {
+                            continue;
+                        }
+                        let mut pos = frag_addr;
+                        loop {
+                            let hd = reader.read_range(pos, 24)?;
+                            let h = BlockHeader::from_bytes(&hd)?;
+                            if h.id.as_str() != "##HL" {
+                                addresses.push(pos);
+                                break;
+                            }
+                            let hl_bytes = reader.read_range(pos, h.length)?;
+                            pos = HlBlock::next_block_addr(&hl_bytes)?;
                         }
                     }
 
                     // Follow the chain
                     next_addr = dl_block.next_dl_addr;
                 }
+                "##HL" => {
+                    let hl_bytes = reader.read_range(next_addr, header.length)?;
+                    next_addr = HlBlock::next_block_addr(&hl_bytes)?;
+                }
                 other => {
                     return Err(Error::BlockIDError {
                         actual: other.to_string(),
-                        expected: "##SD or ##DL".to_string(),
+                        expected: "##SD or ##DL or ##HL".to_string(),
                     });
                 }
             }
