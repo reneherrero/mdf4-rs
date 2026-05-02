@@ -76,9 +76,8 @@ use crate::{
     Error, MDF, Result,
     blocks::{
         BlockHeader, BlockParse, ChannelBlock, ChannelGroupBlock, ConversionBlock, ConversionType,
-        DataGroupBlock, DataListBlock, DataType, HeaderBlock, IdentificationBlock, TextBlock,
-        hl_block::{hl_next_block_addr, skip_hierarchy_blocks},
-        u64_to_usize, validate_buffer_size,
+        DataGroupBlock, DataListBlock, DataType, HeaderBlock, HlBlock, IdentificationBlock,
+        TextBlock, u64_to_usize, validate_buffer_size,
     },
     parsing::decoder::{DecodedValue, decode_channel_value_with_validity},
 };
@@ -827,7 +826,7 @@ impl MdfIndex {
                                 break;
                             }
                             let hl_bytes = reader.read_range(frag_pos, frag_hdr.length)?;
-                            frag_pos = hl_next_block_addr(&hl_bytes)?;
+                            frag_pos = HlBlock::next_block_addr(&hl_bytes)?;
                         }
                     }
 
@@ -835,7 +834,7 @@ impl MdfIndex {
                 }
                 "##HL" => {
                     let hl_bytes = reader.read_range(current_addr, header.length)?;
-                    current_addr = hl_next_block_addr(&hl_bytes)?;
+                    current_addr = HlBlock::next_block_addr(&hl_bytes)?;
                 }
                 _ => {
                     // Unknown block type, stop
@@ -895,7 +894,7 @@ impl MdfIndex {
                             continue;
                         }
                         let (frag_addr, fragment_header) =
-                            skip_hierarchy_blocks(mmap, fragment_address)?;
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
 
                         let is_compressed = fragment_header.id == "##DZ";
                         let data_block_info = DataBlockInfo {
@@ -913,7 +912,7 @@ impl MdfIndex {
                     let len = u64_to_usize(block_header.length, "##HL")?;
                     validate_buffer_size(&mmap[byte_offset..], len)?;
                     current_block_address =
-                        hl_next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
                 }
 
                 unexpected_id => {
@@ -1226,7 +1225,7 @@ impl MdfIndex {
                                 break;
                             }
                             let hl_bytes = reader.read_range(pos, h.length)?;
-                            pos = hl_next_block_addr(&hl_bytes)?;
+                            pos = HlBlock::next_block_addr(&hl_bytes)?;
                         }
                     }
 
@@ -1235,7 +1234,7 @@ impl MdfIndex {
                 }
                 "##HL" => {
                     let hl_bytes = reader.read_range(next_addr, header.length)?;
-                    next_addr = hl_next_block_addr(&hl_bytes)?;
+                    next_addr = HlBlock::next_block_addr(&hl_bytes)?;
                 }
                 other => {
                     return Err(Error::BlockIDError {

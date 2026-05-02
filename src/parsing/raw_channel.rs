@@ -2,8 +2,7 @@ use super::{RawChannelGroup, RawDataGroup};
 use crate::{
     Error, Result,
     blocks::{
-        BlockHeader, BlockParse, ChannelBlock, DataListBlock, SignalDataBlock,
-        hl_block::{hl_next_block_addr, skip_hierarchy_blocks},
+        BlockHeader, BlockParse, ChannelBlock, DataListBlock, HlBlock, SignalDataBlock,
         u64_to_usize,
     },
 };
@@ -76,7 +75,8 @@ impl<'a> RawChannel {
                     if link_idx < data_links.len() {
                         let frag_addr = data_links[link_idx];
                         link_idx += 1;
-                        let (sd_addr, hdr) = match skip_hierarchy_blocks(bytes, frag_addr) {
+                        let (sd_addr, hdr) = match HlBlock::skip_hierarchy_blocks(bytes, frag_addr)
+                        {
                             Ok(v) => v,
                             Err(e) => return Some(Err(e)),
                         };
@@ -147,7 +147,7 @@ impl<'a> RawChannel {
                                         line: line!(),
                                     }));
                                 }
-                                match hl_next_block_addr(&bytes[off..off + len]) {
+                                match HlBlock::next_block_addr(&bytes[off..off + len]) {
                                     Ok(addr) => {
                                         next_addr = addr;
                                         continue;
