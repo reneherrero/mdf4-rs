@@ -1,5 +1,7 @@
 # Contributing to mdf4-rs
 
+> **This repository is archived.** Contribute to **[`pelorus-marine/platform`](https://github.com/pelorus-marine/platform)** (`mdf4-rs/`).
+
 Thank you for your interest in contributing to mdf4-rs! This document provides guidelines and instructions for contributing to the project.
 
 ## Code of Conduct

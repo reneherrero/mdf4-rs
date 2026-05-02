@@ -1,5 +1,10 @@
 # mdf4-rs
 
+> **Archived (read-only).** Active development moved to **[`pelorus-marine/platform`](https://github.com/pelorus-marine/platform)** (**`mdf4-rs/`** subdirectory). Consume releases from **[crates.io/crates/mdf4-rs](https://crates.io/crates/mdf4-rs)** (repository metadata points at the platform repo). Please open issues and pull requests there, not here.
+
+---
+
+
 A safe, efficient Rust library for reading and writing ASAM MDF 4 (Measurement Data Format) files.
 
 [![Crates.io](https://img.shields.io/crates/v/mdf4-rs.svg)](https://crates.io/crates/mdf4-rs)
