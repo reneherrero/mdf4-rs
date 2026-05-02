@@ -2,6 +2,12 @@
 //!
 //! See ASAM MDF: `##DG.data_block_addr` may point at `##HL`, which in turn links to
 //! `##DL` / `##DT` / `##DZ`. Sample layouts store `hl_dl_first` after the link section.
+//!
+//! When `feature = "std"` is off this crate omits parsing modules that call these helpers,
+//! yet the helpers stay compiled with `blocks` (`alloc`) so `--features alloc` / `dbc` configs
+//! that share code paths remain consistent (`-D warnings` gated below).
+
+#![cfg_attr(not(feature = "std"), allow(dead_code))]
 
 use crate::{
     Error, Result,

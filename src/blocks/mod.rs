@@ -54,7 +54,6 @@ mod dz_block;
 mod event_block;
 mod file_history_block;
 mod header_block;
-#[cfg(feature = "std")]
 pub(crate) mod hl_block;
 mod identification_block;
 mod metadata_block;
