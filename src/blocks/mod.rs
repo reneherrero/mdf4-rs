@@ -82,6 +82,7 @@ pub use dz_block::{DZ_HEADER_SIZE, DzBlock, DzCompressionType};
 pub use event_block::{EventBlock, EventCause, EventRangeType, EventSyncType, EventType};
 pub use file_history_block::FileHistoryBlock;
 pub use header_block::HeaderBlock;
+pub use hl_block::HlBlock;
 pub use identification_block::IdentificationBlock;
 pub use metadata_block::MetadataBlock;
 pub use signal_data_block::SignalDataBlock;

@@ -2,9 +2,7 @@ use super::RawChannelGroup;
 use crate::{
     Error, Result,
     blocks::{
-        DataBlock, DataGroupBlock, DataListBlock,
-        hl_block::{hl_next_block_addr, skip_hierarchy_blocks},
-        u64_to_usize, {BlockHeader, BlockParse},
+        DataBlock, DataGroupBlock, DataListBlock, HlBlock, u64_to_usize, {BlockHeader, BlockParse},
     },
 };
 use alloc::string::ToString;
@@ -125,7 +123,8 @@ impl RawDataGroup {
                         if fragment_address == 0 {
                             continue;
                         }
-                        let (frag_addr, _) = skip_hierarchy_blocks(mmap, fragment_address)?;
+                        let (frag_addr, _) =
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
                         let fragment_offset = u64_to_usize(frag_addr, "DL fragment address")?;
                         let fragment_block = DataBlock::from_bytes(&mmap[fragment_offset..])?;
 
@@ -138,7 +137,7 @@ impl RawDataGroup {
                 "##HL" => {
                     let len = u64_to_usize(block_header.length, "##HL")?;
                     current_block_address =
-                        hl_next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
                 }
 
                 unexpected_id => {
@@ -216,7 +215,7 @@ impl RawDataGroup {
                             continue;
                         }
                         let (frag_addr, frag_header) =
-                            skip_hierarchy_blocks(mmap, fragment_address)?;
+                            HlBlock::skip_hierarchy_blocks(mmap, fragment_address)?;
                         let fragment_offset = u64_to_usize(frag_addr, "DL fragment address")?;
 
                         match frag_header.id.as_str() {
@@ -261,7 +260,7 @@ impl RawDataGroup {
                 "##HL" => {
                     let len = u64_to_usize(block_header.length, "##HL")?;
                     current_block_address =
-                        hl_next_block_addr(&mmap[byte_offset..byte_offset + len])?;
+                        HlBlock::next_block_addr(&mmap[byte_offset..byte_offset + len])?;
                 }
                 unexpected_id => {
                     return Err(Error::BlockIDError {
