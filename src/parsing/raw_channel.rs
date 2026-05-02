@@ -1,7 +1,11 @@
 use super::{RawChannelGroup, RawDataGroup};
 use crate::{
     Error, Result,
-    blocks::{BlockParse, ChannelBlock, DataListBlock, SignalDataBlock},
+    blocks::{
+        BlockHeader, BlockParse, ChannelBlock, DataListBlock, SignalDataBlock,
+        hl_block::{hl_next_block_addr, skip_hierarchy_blocks},
+        u64_to_usize,
+    },
 };
 
 /// A channel with lazy access to its raw record bytes (fixed-length or VLSD).
@@ -72,10 +76,22 @@ impl<'a> RawChannel {
                     if link_idx < data_links.len() {
                         let frag_addr = data_links[link_idx];
                         link_idx += 1;
-                        let off = frag_addr as usize;
+                        let (sd_addr, hdr) = match skip_hierarchy_blocks(bytes, frag_addr) {
+                            Ok(v) => v,
+                            Err(e) => return Some(Err(e)),
+                        };
+                        if hdr.id.as_str() != "##SD" {
+                            return Some(Err(Error::BlockIDError {
+                                actual: hdr.id.clone(),
+                                expected: "##SD (after ##HL if present)".to_string(),
+                            }));
+                        }
+                        let off = match u64_to_usize(sd_addr, "VLSD SD block address") {
+                            Ok(o) => o,
+                            Err(e) => return Some(Err(e)),
+                        };
                         match SignalDataBlock::from_bytes(&bytes[off..]) {
                             Ok(sdb) => {
-                                // Prepare to yield from it on the next loop
                                 current_sdb = Some(sdb);
                                 sdb_pos = 0;
                                 continue;
@@ -114,11 +130,36 @@ impl<'a> RawChannel {
                                     Err(e) => return Some(Err(e)),
                                 }
                             }
+                            b"##HL" => {
+                                let header = match BlockHeader::from_bytes(&bytes[off..off + 24]) {
+                                    Ok(h) => h,
+                                    Err(e) => return Some(Err(e)),
+                                };
+                                let len = match u64_to_usize(header.length, "##HL") {
+                                    Ok(l) => l,
+                                    Err(e) => return Some(Err(e)),
+                                };
+                                if off + len > bytes.len() {
+                                    return Some(Err(Error::TooShortBuffer {
+                                        actual: bytes.len(),
+                                        expected: off + len,
+                                        file: file!(),
+                                        line: line!(),
+                                    }));
+                                }
+                                match hl_next_block_addr(&bytes[off..off + len]) {
+                                    Ok(addr) => {
+                                        next_addr = addr;
+                                        continue;
+                                    }
+                                    Err(e) => return Some(Err(e)),
+                                }
+                            }
                             other => {
                                 // unexpected block type
                                 return Some(Err(Error::BlockIDError {
                                     actual: String::from_utf8_lossy(other).into(),
-                                    expected: "##DL or ##SD".to_string(),
+                                    expected: "##DL or ##SD or ##HL".to_string(),
                                 }));
                             }
                         }
